@@ -1,0 +1,2340 @@
+/**
+ * 题目管理路由
+ */
+const express = require('express');
+const router = express.Router();
+const axios = require('axios');
+const { executeWithRetry, pool } = require('../server'); // 添加pool的引入
+
+// 用于验证请求的中间件
+const authenticate = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  if (!token) {
+    return res.status(401).json({ message: '未提供授权令牌' });
+  }
+  
+  try {
+    // 假设已有验证机制，这里简单处理
+    // 实际项目中应该验证token的有效性
+    next();
+  } catch (error) {
+    console.error('验证失败:', error);
+    return res.status(403).json({ message: '授权验证失败' });
+  }
+};
+
+// 获取题目列表
+router.get('/', authenticate, async (req, res) => {
+  const { 
+    teacherId, 
+    subject, 
+    year, 
+    type,
+    grade, 
+    selectionStatus = 'all', 
+    page = 1, 
+    limit = 10,
+    tab = 'all'
+  } = req.query;
+  
+  if (!teacherId) {
+    return res.status(400).json({ message: '缺少必要参数: teacherId' });
+  }
+  
+  try {
+    console.log(`获取题目列表请求, 教师ID: ${teacherId}, 筛选条件:`, req.query);
+    
+    // 查询已选题目
+    const selectedQuestions = await executeWithRetry(async (conn) => {
+      const [rows] = await conn.query(
+        `SELECT question_id, question_type, question_folder_or_id 
+         FROM teachers_selected_questions 
+         WHERE teacher_id = ?`,
+        [teacherId]
+      );
+      return rows;
+    });
+    
+    // 构建已选题目ID映射
+    const selectedMap = new Map();
+    selectedQuestions.forEach(q => {
+      const key = `${q.question_type}-${q.question_id}`;
+      selectedMap.set(key, q.question_folder_or_id);
+    });
+    
+    // 构建API请求参数
+    const latexParams = {};
+    const imageParams = {};
+    
+    if (subject) {
+      latexParams.subject = subject;
+      imageParams.subject = subject;
+    }
+    if (year) {
+      latexParams.year = year;
+      imageParams.year = year;
+    }
+    if (type) {
+      latexParams.type = type;
+      imageParams.type = type;
+    }
+    if (grade) {
+      latexParams.grade = grade;
+      imageParams.grade = grade;
+    }
+    
+    // 获取题目数据
+    let latexQuestions = [];
+    let imageQuestions = [];
+    
+    // 根据tab决定获取哪种类型的题目
+    if (tab === 'all' || tab === 'latex') {
+      // 获取LaTeX题目
+      try {
+        const latexResponse = await axios.get('http://localhost:3001/latex-questions', {
+          params: latexParams
+        });
+        latexQuestions = Array.isArray(latexResponse.data) ? latexResponse.data : [];
+        
+        // 添加类型标记和选中状态
+        latexQuestions = latexQuestions.map(q => ({
+          ...q,
+          id: parseInt(q.id),
+          type: 'latex',
+          is_selected: selectedMap.has(`latex-${q.id}`)
+        }));
+      } catch (error) {
+        console.error('获取LaTeX题目失败:', error);
+      }
+    }
+    
+    if (tab === 'all' || tab === 'image') {
+      // 获取文件夹结构
+      try {
+        console.log('获取图片题目，参数:', imageParams);
+        
+        // 使用遍历方法获取所有题目，然后根据筛选条件过滤
+        // 第一步：获取所有科目
+        const allSubjectsResponse = await axios.get('http://localhost:3001/folders');
+        let allSubjects = [];
+        
+        if (Array.isArray(allSubjectsResponse.data)) {
+          allSubjects = allSubjectsResponse.data;
+        } else if (allSubjectsResponse.data && Array.isArray(allSubjectsResponse.data.folders)) {
+          allSubjects = allSubjectsResponse.data.folders;
+        }
+        
+        console.log(`获取到 ${allSubjects.length} 个科目`);
+        
+        // 根据筛选条件过滤科目
+        const subjectsToProcess = subject 
+          ? allSubjects.filter(s => s.name === subject)
+          : allSubjects;
+          
+        // console.log(`筛选后处理 ${subjectsToProcess.length} 个科目`);
+        
+        // 逐个处理每个科目
+        for (const subjectFolder of subjectsToProcess) {
+          // 获取科目下的年级
+          const gradesResponse = await axios.get('http://localhost:3001/folders', {
+            params: { subject: subjectFolder.name }
+          });
+          
+          let grades = [];
+          if (Array.isArray(gradesResponse.data)) {
+            grades = gradesResponse.data;
+          } else if (gradesResponse.data && Array.isArray(gradesResponse.data.folders)) {
+            grades = gradesResponse.data.folders;
+          }
+          
+          // 根据筛选条件过滤年级
+          const gradesToProcess = grade 
+            ? grades.filter(g => g.name === grade)
+            : grades;
+            
+          console.log(`科目 ${subjectFolder.name} 下筛选后处理 ${gradesToProcess.length} 个年级`);
+          
+          // 逐个处理每个年级
+          for (const gradeFolder of gradesToProcess) {
+            // 获取年级下的年份
+            const yearsResponse = await axios.get('http://localhost:3001/folders', {
+              params: { 
+                subject: subjectFolder.name,
+                grade: gradeFolder.name 
+              }
+            });
+            
+            let years = [];
+            if (Array.isArray(yearsResponse.data)) {
+              years = yearsResponse.data;
+            } else if (yearsResponse.data && Array.isArray(yearsResponse.data.folders)) {
+              years = yearsResponse.data.folders;
+            }
+            
+            // 根据筛选条件过滤年份
+            const yearsToProcess = year 
+              ? years.filter(y => y.name === year)
+              : years;
+              
+            console.log(`年级 ${gradeFolder.name} 下筛选后处理 ${yearsToProcess.length} 个年份`);
+            
+            // 逐个处理每个年份
+            for (const yearFolder of yearsToProcess) {
+              // 获取年份下的题目类型
+              const typesResponse = await axios.get('http://localhost:3001/folders', {
+                params: { 
+                  subject: subjectFolder.name,
+                  grade: gradeFolder.name,
+                  year: yearFolder.name 
+                }
+              });
+              
+              let types = [];
+              if (Array.isArray(typesResponse.data)) {
+                types = typesResponse.data;
+              } else if (typesResponse.data && Array.isArray(typesResponse.data.folders)) {
+                types = typesResponse.data.folders;
+              }
+              
+              // 根据筛选条件过滤题目类型
+              const typesToProcess = type 
+                ? types.filter(t => t.name === type)
+                : types;
+                
+              console.log(`年份 ${yearFolder.name} 下筛选后处理 ${typesToProcess.length} 个题目类型`);
+              
+              // 逐个处理每个题目类型
+              for (const typeFolder of typesToProcess) {
+                // 获取题目类型下的文件夹（具体题目）
+                const questionsResponse = await axios.get('http://localhost:3001/folders', {
+                  params: { 
+                    subject: subjectFolder.name,
+                    grade: gradeFolder.name,
+                    year: yearFolder.name,
+                    type: typeFolder.name 
+                  }
+                });
+                
+                let questions = [];
+                if (Array.isArray(questionsResponse.data)) {
+                  questions = questionsResponse.data;
+                } else if (questionsResponse.data && Array.isArray(questionsResponse.data.folders)) {
+                  questions = questionsResponse.data.folders;
+                }
+                
+                console.log(`题目类型 ${typeFolder.name} 下有 ${questions.length} 个题目文件夹`);
+                
+                // 处理每个题目文件夹
+                for (const questionFolder of questions) {
+                  try {
+                    // 构建完整路径
+                    const folderPath = `${subjectFolder.name}/${gradeFolder.name}/${yearFolder.name}/${typeFolder.name}/${questionFolder.name}`;
+                    
+                    // 获取图片
+                    const imageResponse = await axios.get('http://localhost:3001/images', {
+                      params: { folderPath }
+                    });
+                    
+                    if (imageResponse.data && imageResponse.data.length > 0) {
+                      // 为每个文件夹创建一个题目对象
+                      const questionId = generateQuestionId(questionFolder.name);
+                      imageQuestions.push({
+                        id: questionId,
+                        type: 'image',
+                        subject: subjectFolder.name,
+                        grade: gradeFolder.name,
+                        year: yearFolder.name,
+                        question_type: typeFolder.name,
+                        folder_name: questionFolder.name,
+                        path: folderPath,
+                        images: imageResponse.data,
+                        is_selected: selectedMap.has(`image-${questionId}`)
+                      });
+                    }
+                  } catch (questionError) {
+                    console.error(`处理题目文件夹 ${questionFolder.name} 时出错:`, questionError);
+                  }
+                }
+              }
+            }
+          }
+        }
+        
+        console.log(`总共获取到 ${imageQuestions.length} 个图片题目`);
+      } catch (folderError) {
+        console.error('获取文件夹结构失败:', folderError);
+      }
+    }
+    
+    // 合并题目
+    let allQuestions = [...latexQuestions, ...imageQuestions];
+    
+    // 根据选中状态筛选
+    if (selectionStatus === 'selected') {
+      allQuestions = allQuestions.filter(q => q.is_selected);
+    } else if (selectionStatus === 'unselected') {
+      allQuestions = allQuestions.filter(q => !q.is_selected);
+    }
+    
+    // 分页处理
+    const startIndex = (page - 1) * limit;
+    const paginatedQuestions = allQuestions.slice(startIndex, startIndex + parseInt(limit));
+    
+    res.json({
+      questions: paginatedQuestions,
+      total: allQuestions.length,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(allQuestions.length / limit)
+    });
+    
+  } catch (error) {
+    console.error('获取题目列表失败:', error);
+    res.status(500).json({ message: '获取题目列表失败', error: error.message });
+  }
+});
+
+// 选择题目
+router.post('/select', authenticate, async (req, res) => {
+  console.log('===================================');
+  console.log('【后端】收到批量选入题目请求');
+  // console.log('【后端】时间:', new Date().toISOString());
+  
+  // // 完整输出请求详情
+  // console.log('【后端】请求头:', req.headers);
+  // console.log('【后端】请求体:', req.body);
+  
+  const { teacherId, questionIds, questionTypes } = req.body;
+  
+  console.log('【后端】解析的参数:', {
+    teacherId: typeof teacherId === 'number' ? teacherId : typeof teacherId,
+    questionIds: Array.isArray(questionIds) ? 
+      `数组长度: ${questionIds.length}, 内容: [${questionIds.join(', ')}]` : 
+      typeof questionIds,
+    questionTypes: Array.isArray(questionTypes) ?
+      `数组长度: ${questionTypes.length}, 内容: [${questionTypes.join(', ')}]` :
+      typeof questionTypes
+  });
+  
+  // 检查参数有效性
+  if (!teacherId) {
+    console.log('【后端】缺少teacherId参数');
+    return res.status(400).json({ message: '无效的请求参数: 缺少teacherId' });
+  }
+  
+  if (!questionIds) {
+    console.log('【后端】缺少questionIds参数');
+    return res.status(400).json({ message: '无效的请求参数: 缺少questionIds' });
+  }
+  
+  if (!Array.isArray(questionIds)) {
+    console.log('【后端】questionIds不是数组');
+    return res.status(400).json({ message: '无效的请求参数: questionIds必须是数组' });
+  }
+  
+  if (questionIds.length === 0) {
+    console.log('【后端】questionIds数组为空');
+    return res.status(400).json({ message: '无效的请求参数: questionIds数组为空' });
+  }
+  
+  try {
+    // console.log('====================================================================================================');
+    // console.log(`【后端】开始处理选择题目请求, 教师ID: ${teacherId}, 题目IDs:`, questionIds);
+    
+    // 验证questionIds是否都是数字
+    const validQuestionIds = questionIds.filter(id => !isNaN(Number(id))).map(id => Number(id));
+    
+    if (validQuestionIds.length === 0) {
+      console.log('【后端】没有有效的题目ID');
+      return res.status(400).json({ message: '没有有效的题目ID' });
+    }
+    
+    if (validQuestionIds.length !== questionIds.length) {
+      console.log('【后端】部分题目ID无效，已过滤');
+      console.log('【后端】原始IDs:', questionIds);
+      console.log('【后端】有效IDs:', validQuestionIds);
+    }
+    
+    // 构建ID和类型的映射关系
+    const typeMap = {};
+    
+    // 如果提供了questionTypes参数，则使用它
+    if (Array.isArray(questionTypes) && questionTypes.length > 0) {
+      // console.log('【后端】使用前端提供的题目类型');
+      
+      // 确保类型数组长度与ID数组匹配
+      const minLength = Math.min(validQuestionIds.length, questionTypes.length);
+      for (let i = 0; i < minLength; i++) {
+        typeMap[validQuestionIds[i]] = questionTypes[i];
+      }
+      
+      console.log('【后端】题目类型映射:', typeMap);
+    } else {
+      console.log('【后端】未提供题目类型参数，将尝试查询类型');
+    }
+    
+    // 获取题目详情
+    const questions = [];
+    
+    // 获取LaTeX题目
+    try {
+      // 直接从数据库获取LaTeX题目信息
+      const [latexQuestions] = await executeWithRetry(async (conn) => {
+        // console.log('【后端】查询LaTeX题目，IDs:', validQuestionIds);
+        return await conn.query(
+          `SELECT id, subject, grade, year, type, folder_name 
+           FROM latex_questions 
+           WHERE id IN (?)`,
+          [validQuestionIds]
+        );
+      });
+      
+      console.log(`【后端】查询到 ${latexQuestions.length} 个LaTeX题目`);
+       
+      questions.push(...latexQuestions.map(q => ({
+        id: parseInt(q.id),
+        type: 'latex',
+        subject: q.subject || '',
+        grade: q.grade || '',
+        year: q.year || '',
+        questionType: q.type || '',  // 使用questionType避免名称冲突
+        timeid: q.folder_name || '',
+        question_folder_or_id: q.id.toString()
+      })));
+    } catch (error) {
+      console.error('【后端】获取LaTeX题目详情失败:', error);
+    }
+
+    // 对于图片题目，检查前端提供的类型信息
+    const imageIds = validQuestionIds.filter(id => {
+      // 如果有类型映射且类型为'image'，或者在LaTeX题目中找不到
+      return (typeMap[id] === 'image') || !questions.some(q => q.id === id);
+    });
+    
+    console.log('【后端】需要处理的图片题目IDs:', imageIds);
+    
+    if (imageIds.length > 0) {
+      try {
+        // 从已选择的题目表中查询已存在的图片题目信息
+        const [existingImageQuestions] = await executeWithRetry(async (conn) => {
+          return await conn.query(
+            `SELECT question_id, subject, grade, year, type, timeid, question_folder_or_id 
+             FROM teachers_selected_questions 
+             WHERE teacher_id = ? AND question_id IN (?) AND question_type = 'image'`,
+            [teacherId, imageIds]
+          );
+        });
+        
+        console.log(`【后端】从已选择表中找到 ${existingImageQuestions.length} 个图片题目`);
+        
+        // 添加已存在的图片题目
+        questions.push(...existingImageQuestions.map(q => ({
+          id: parseInt(q.question_id),
+          type: 'image',
+          subject: q.subject || '',
+          grade: q.grade || '',
+          year: q.year || '',
+          questionType: q.type || '',
+          timeid: q.timeid || '',
+          question_folder_or_id: q.question_folder_or_id || `${q.question_id}`
+        })));
+        
+        // 对于剩余未找到的图片题目，使用文件夹名称查询
+        const foundIds = questions.map(q => q.id);
+        const remainingImageIds = imageIds.filter(id => !foundIds.includes(id));
+        
+        // console.log('【后端】仍需查询的图片题目IDs:', remainingImageIds);
+        
+        // 尝试直接插入图片题目
+        if (remainingImageIds.length > 0) {
+          console.log('【后端】将剩余图片题目直接插入数据库');
+          for (const id of remainingImageIds) {
+            questions.push({
+              id: id,
+              type: 'image',
+              subject: '',
+              grade: '',
+              year: '',
+              questionType: '',
+              timeid: '',
+              question_folder_or_id: `folder_${id}`
+            });
+          }
+        }
+      } catch (error) {
+        console.error('【后端】获取图片题目信息失败:', error);
+      }
+    }
+    
+    // 匹配找到的题目
+    const matchedQuestions = questions.filter(q => validQuestionIds.includes(q.id));
+    
+    // 处理未匹配到的题目，使用类型映射创建题目对象
+    const unmatchedIds = validQuestionIds.filter(id => !matchedQuestions.some(q => q.id === id));
+    if (unmatchedIds.length > 0) {
+      console.log('【后端】有未匹配到的题目，将使用类型映射创建:', unmatchedIds);
+      
+      for (const id of unmatchedIds) {
+        // 使用映射中的类型，默认为'image'
+        const type = typeMap[id] || 'image';
+        
+        matchedQuestions.push({
+          id: id,
+          type: type,
+          subject: '',
+          grade: '',
+          year: '',
+          questionType: '',
+          timeid: '',
+          question_folder_or_id: type === 'latex' ? id.toString() : `folder_${id}`
+        });
+      }
+    }
+    
+    console.log(`【后端】匹配到 ${matchedQuestions.length}/${validQuestionIds.length} 个题目需要选入`);
+    // console.log('【后端】匹配到的题目IDs:', matchedQuestions.map(q => q.id));
+    console.log('【后端】剩余未匹配题目:', unmatchedIds);
+    
+    if (matchedQuestions.length === 0) {
+      console.log('【后端】未找到指定的题目');
+      return res.status(404).json({ message: '未找到指定的题目' });
+    }
+    
+    const results = [];
+    let successCount = 0;
+    
+    // 插入选中的题目记录
+    // console.log('【后端】开始更新数据库记录...');
+    
+    for (const question of matchedQuestions) {
+      let conn;
+      try {
+        // console.log(`【后端】处理题目ID: ${question.id}, 类型: ${question.type}`);
+        
+        conn = await pool.getConnection();
+        
+        // 先检查是否存在记录
+        const [existingRows] = await conn.query(
+          `SELECT id, \`select\` FROM teachers_selected_questions 
+           WHERE teacher_id = ? AND question_id = ? AND question_type = ?`,
+          [teacherId, question.id, question.type]
+        );
+        
+        console.log(`【后端】题目ID ${question.id} 查询结果: 找到 ${existingRows.length} 条记录`);
+        if (existingRows.length > 0) {
+          console.log(`【后端】现有记录ID: ${existingRows[0].id}, 当前select值: ${existingRows[0].select}`);
+        }
+        
+        let success = false;
+        
+        if (existingRows.length === 0) {
+          // 如果记录不存在，创建新记录并设置select = 1（已选中）
+          console.log(`【后端】题目ID ${question.id} 不存在记录，创建新记录`);
+          
+          try {
+            const insertSql = `
+              INSERT INTO teachers_selected_questions 
+              (teacher_id, question_id, question_type, subject, grade, year, type, timeid, question_folder_or_id, \`select\`)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '1')`;
+              
+            console.log('【后端】执行SQL:', insertSql);
+            
+            const insertParams = [
+              teacherId, 
+              question.id, 
+              question.type,
+              question.subject || null,
+              question.grade || null,
+              question.year || null,
+              question.questionType || null,  // 这里使用questionType
+              question.timeid || null,
+              question.question_folder_or_id || `${question.id}`
+            ];
+            
+            console.log('【后端】SQL参数:', insertParams);
+            
+            const insertResult = await conn.query(insertSql, insertParams);
+            
+            console.log(`【后端】题目ID ${question.id} 插入结果:`, {
+              affectedRows: insertResult[0]?.affectedRows,
+              insertId: insertResult[0]?.insertId
+            });
+            
+            success = insertResult[0]?.affectedRows > 0 || insertResult[0]?.insertId > 0;
+          } catch (dbError) {
+            console.error(`【后端】题目ID ${question.id} 插入错误:`, dbError);
+            success = false;
+          }
+        } else {
+          // 如果记录存在，只更新select字段为1（已选中）和其他元数据
+          console.log(`【后端】题目ID ${question.id} 已存在记录，更新select=1`);
+          
+          try {
+            const updateSql = `
+              UPDATE teachers_selected_questions SET
+              subject = COALESCE(?, subject),
+              grade = COALESCE(?, grade),
+              year = COALESCE(?, year),
+              type = COALESCE(?, type),
+              timeid = COALESCE(?, timeid),
+              \`select\` = '1',
+              selected_at = CURRENT_TIMESTAMP
+              WHERE teacher_id = ? AND question_id = ? AND question_type = ?`;
+              
+            console.log('【后端】执行SQL:', updateSql);
+            
+            const updateParams = [
+              question.subject || null,
+              question.grade || null,
+              question.year || null,
+              question.questionType || null,  // 这里使用questionType
+              question.timeid || null,
+              teacherId,
+              question.id,
+              question.type
+            ];
+            
+            console.log('【后端】SQL参数:', updateParams);
+            
+            const updateResult = await conn.query(updateSql, updateParams);
+            
+            console.log(`【后端】题目ID ${question.id} 更新结果:`, {
+              affectedRows: updateResult[0]?.affectedRows,
+              changedRows: updateResult[0]?.changedRows
+            });
+            
+            success = updateResult[0]?.affectedRows > 0 || updateResult[0]?.changedRows > 0;
+          } catch (dbError) {
+            console.error(`【后端】题目ID ${question.id} 更新错误:`, dbError);
+            success = false;
+          }
+        }
+        
+        if (success) {
+          successCount++;
+          console.log(`【后端】题目ID ${question.id} 操作成功`);
+        } else {
+          console.log(`【后端】题目ID ${question.id} 操作失败`);
+        }
+        
+        results.push({
+          questionId: question.id,
+          questionType: question.type,
+          success: success,
+          message: success ? '成功选入' : '选入失败'
+        });
+      } catch (error) {
+        console.error(`【后端】处理题目ID ${question.id} 失败:`, error);
+        results.push({
+          questionId: question.id,
+          questionType: question.type,
+          success: false,
+          message: error.message || '未知错误'
+        });
+      } finally {
+        if (conn) {
+          conn.release();
+        }
+      }
+    }
+    
+    console.log(`【后端】批量选入完成: 成功 ${successCount}/${matchedQuestions.length} 道题目`);
+    
+    const response = { 
+      message: `成功选择${successCount}道题目`, 
+      selectedCount: successCount,
+      totalCount: matchedQuestions.length,
+      results: results
+    };
+    
+    console.log('【后端】返回响应:', response);
+    console.log('===================================');
+    
+    res.json(response);
+    
+  } catch (error) {
+    console.error('【后端】选择题目失败:', error);
+    res.status(500).json({ message: '选择题目失败', error: error.message });
+  }
+});
+
+// 取消选择题目
+router.post('/deselect', authenticate, async (req, res) => {
+  console.log('=+++++++++++++++++++++++++++++++++++++++++++++++++=');
+  console.log('【后端】收到取消选入题目请求');
+  // console.log('【后端】时间:', new Date().toISOString());
+  
+  // 完整输出请求详情
+  // console.log('【后端】请求头:', req.headers);
+  // console.log('【后端】请求体:', req.body);
+  
+  const { teacherId, questionId, questionType } = req.body;
+  
+  console.log('【后端】解析的参数:', {
+    teacherId: typeof teacherId === 'number' ? teacherId : typeof teacherId,
+    questionId: questionId,
+    questionType: questionType || '未提供'
+  });
+  
+  if (!teacherId || !questionId) {
+    console.log('【后端】缺少必要参数');
+    return res.status(400).json({ message: '无效的请求参数' });
+  }
+  
+  try {
+    console.log(`【后端】开始处理取消选入请求, 教师ID: ${teacherId}, 题目ID: ${questionId}, 类型: ${questionType || '未提供'}`);
+    
+    let conn;
+    try {
+      conn = await pool.getConnection();
+      
+      // 如果未提供questionType或类型为'unknown'，先查询获取
+      let actualQuestionType = questionType;
+      if (!actualQuestionType || actualQuestionType === 'unknown') {
+        // console.log(`【后端】类型未提供或为unknown，查询数据库获取类型`);
+        const [typeRows] = await conn.query(
+          `SELECT question_type FROM teachers_selected_questions 
+           WHERE teacher_id = ? AND question_id = ?`,
+          [teacherId, questionId]
+        );
+        
+        if (typeRows.length === 0) {
+          console.log('【后端】未找到该选中记录');
+          return res.status(404).json({ 
+            message: '未找到该选中记录',
+            details: {
+              teacherId,
+              questionId,
+              questionType
+            }
+          });
+        }
+        
+        actualQuestionType = typeRows[0].question_type;
+        console.log(`【后端】已查询题目类型: ${actualQuestionType}`);
+      }
+      
+      // 检查记录是否存在并且select=1
+      const [checkRows] = await conn.query(
+        `SELECT id, \`select\` FROM teachers_selected_questions 
+         WHERE teacher_id = ? AND question_id = ? AND question_type = ?`,
+        [teacherId, questionId, actualQuestionType]
+      );
+      
+      if (checkRows.length === 0) {
+        console.log('【后端】未找到该题目记录');
+        return res.status(404).json({ 
+          message: '未找到该题目记录',
+          details: {
+            teacherId,
+            questionId,
+            questionType: actualQuestionType
+          }
+        });
+      }
+      
+      console.log(`【后端】找到题目记录, ID: ${checkRows[0].id}, 当前select值: ${checkRows[0].select}`);
+      
+      // 检查当前是否已选中
+      if (checkRows[0].select !== '1') {
+        console.log(`【后端】题目ID ${questionId} 当前未被选入，无需取消`);
+        return res.status(400).json({ 
+          message: '该题目当前未被选入，无需取消',
+          currentStatus: checkRows[0].select,
+          details: {
+            teacherId,
+            questionId,
+            questionType: actualQuestionType
+          }
+        });
+      }
+      
+      // 更新select字段为0，表示未选中
+      console.log(`【后端】更新题目ID ${questionId}, 类型: ${actualQuestionType}, 设置select=0`);
+      const [updateResult] = await conn.query(
+        `UPDATE teachers_selected_questions SET
+         \`select\` = '0'
+         WHERE teacher_id = ? AND question_id = ? AND question_type = ?`,
+        [teacherId, questionId, actualQuestionType]
+      );
+      
+      if (updateResult.affectedRows === 0) {
+        console.log('【后端】更新失败，受影响行数为0');
+        return res.status(400).json({ 
+          message: '更新失败，请检查参数是否正确',
+          details: {
+            teacherId,
+            questionId,
+            questionType: actualQuestionType
+          }
+        });
+      }
+      
+      console.log(`【后端】成功更新记录, 受影响行数: ${updateResult.affectedRows}`);
+      
+      const response = { 
+        message: '成功取消选择题目',
+        affectedRows: updateResult.affectedRows,
+        previousStatus: checkRows[0].select,
+        details: {
+          teacherId,
+          questionId,
+          questionType: actualQuestionType
+        }
+      };
+      
+      console.log('【后端】返回响应:', response);
+      console.log('=+++++++++++++++++++++++++++++++++++++++++++++++++=');
+      
+      res.json(response);
+    } finally {
+      if (conn) conn.release();
+    }
+  } catch (error) {
+    console.error('【后端】取消选择题目失败:', error);
+    // 确保返回详细的错误信息以便调试
+    res.status(500).json({ 
+      message: '取消选择题目失败',
+      error: error.message,
+      stack: process.env.NODE_ENV !== 'production' ? error.stack : undefined
+    });
+  }
+});
+
+// 批量取消选择题目
+router.post('/batch-deselect', authenticate, async (req, res) => {
+  console.log('=+++++++++++++++++++++++++++++++++++++++++++++++++=');
+  console.log('【后端】收到批量取消选入题目请求');
+  console.log('【后端】时间:', new Date().toISOString());
+  
+  // 完整输出请求详情
+  console.log('【后端】请求头:', req.headers);
+  console.log('【后端】请求体:', req.body);
+  
+  const { teacherId, questionIds, questionTypes } = req.body;
+  
+  console.log('【后端】解析的参数:', {
+    teacherId: typeof teacherId === 'number' ? teacherId : typeof teacherId,
+    questionIds: Array.isArray(questionIds) ? 
+      `数组长度: ${questionIds.length}, 内容: [${questionIds.join(', ')}]` : 
+      typeof questionIds,
+    questionTypes: Array.isArray(questionTypes) ?
+      `数组长度: ${questionTypes.length}, 内容: [${questionTypes.join(', ')}]` :
+      typeof questionTypes
+  });
+  
+  if (!teacherId || !questionIds || !Array.isArray(questionIds) || questionIds.length === 0) {
+    console.log('【后端】缺少必要参数');
+    return res.status(400).json({ message: '无效的请求参数' });
+  }
+  
+  // 构建ID和类型的映射关系
+  const typeMap = {};
+  
+  // 如果提供了questionTypes参数，则使用它
+  if (Array.isArray(questionTypes) && questionTypes.length > 0) {
+    console.log('【后端】使用前端提供的题目类型');
+    
+    // 确保类型数组长度与ID数组匹配
+    const minLength = Math.min(questionIds.length, questionTypes.length);
+    for (let i = 0; i < minLength; i++) {
+      // 如果类型是'unknown'，不添加到映射表，后续会尝试从数据库查询
+      if (questionTypes[i] && questionTypes[i] !== 'unknown') {
+        typeMap[questionIds[i]] = questionTypes[i];
+      } else {
+        console.log(`【后端】题目ID ${questionIds[i]} 的类型未知或无效，将尝试从数据库查询`);
+      }
+    }
+    
+    console.log('【后端】题目类型映射:', typeMap);
+  } else {
+    console.log('【后端】未提供题目类型参数，将尝试查询类型');
+  }
+  
+  let conn;
+  try {
+    console.log(`【后端】开始处理批量取消选入, 教师ID: ${teacherId}, 题目IDs:`, questionIds);
+    
+    conn = await pool.getConnection();
+    
+    // 开始事务
+    await conn.beginTransaction();
+    console.log('【后端】开始数据库事务');
+    
+    const results = [];
+    let successCount = 0;
+    let failedCount = 0;
+    let notSelectedCount = 0;
+    let notFoundCount = 0;
+    
+    // 为每个题目ID更新select字段为0
+    for (const questionId of questionIds) {
+      try {
+        // 如果有类型映射，直接使用它
+        let questionType = typeMap[questionId];
+        
+        if (!questionType) {
+          console.log(`【后端】题目ID ${questionId} 没有预设类型，查询数据库获取类型`);
+          // 先获取题目类型
+          const [questionRows] = await conn.query(
+            `SELECT question_type, \`select\` FROM teachers_selected_questions 
+             WHERE teacher_id = ? AND question_id = ?`,
+            [teacherId, questionId]
+          );
+          
+          if (questionRows.length === 0) {
+            console.log(`【后端】未找到题目ID ${questionId} 的记录`);
+            notFoundCount++;
+            results.push({
+              questionId,
+              success: false,
+              message: '未找到该题目记录'
+            });
+            continue;
+          }
+          
+          questionType = questionRows[0].question_type;
+          const currentSelectStatus = questionRows[0].select;
+          
+          console.log(`【后端】题目ID ${questionId}, 类型: ${questionType}, 当前select值: ${currentSelectStatus}`);
+          
+          // 只有当前select=1时才需要更新
+          if (currentSelectStatus !== '1') {
+            console.log(`【后端】题目ID ${questionId} 当前未被选入，无需取消`);
+            notSelectedCount++;
+            results.push({
+              questionId,
+              success: false,
+              message: '该题目当前未被选入，无需取消',
+              currentStatus: currentSelectStatus
+            });
+            continue;
+          }
+        } else {
+          console.log(`【后端】使用预设的题目类型: ${questionId}=${questionType}`);
+          
+          // 检查记录是否存在
+          const [checkRows] = await conn.query(
+            `SELECT id, \`select\` FROM teachers_selected_questions 
+             WHERE teacher_id = ? AND question_id = ? AND question_type = ?`,
+            [teacherId, questionId, questionType]
+          );
+          
+          if (checkRows.length === 0) {
+            console.log(`【后端】未找到题目ID ${questionId} 类型 ${questionType} 的记录`);
+            notFoundCount++;
+            results.push({
+              questionId,
+              success: false,
+              message: '未找到该题目记录'
+            });
+            continue;
+          }
+          
+          // 只有当前select=1时才需要更新
+          if (checkRows[0].select !== '1') {
+            console.log(`【后端】题目ID ${questionId} 当前未被选入，无需取消`);
+            notSelectedCount++;
+            results.push({
+              questionId,
+              success: false,
+              message: '该题目当前未被选入，无需取消',
+              currentStatus: checkRows[0].select
+            });
+            continue;
+          }
+        }
+        
+        // 更新select字段为0，表示未选中
+        console.log(`【后端】更新题目ID ${questionId}, 类型: ${questionType}, 设置select=0`);
+        const [updateResult] = await conn.query(
+          `UPDATE teachers_selected_questions SET
+           \`select\` = '0'
+           WHERE teacher_id = ? AND question_id = ? AND question_type = ?`,
+          [teacherId, questionId, questionType]
+        );
+        
+        const success = updateResult.affectedRows > 0;
+        
+        console.log(`【后端】题目ID ${questionId} 更新结果: ${success ? '成功' : '失败'}, 影响行数: ${updateResult.affectedRows}`);
+        
+        if (success) {
+          successCount++;
+        } else {
+          failedCount++;
+        }
+        
+        results.push({
+          questionId,
+          success,
+          message: success ? '成功取消选择' : '更新失败',
+          affectedRows: updateResult.affectedRows
+        });
+      } catch (error) {
+        console.error(`【后端】处理题目ID ${questionId} 失败:`, error);
+        failedCount++;
+        results.push({
+          questionId,
+          success: false,
+          message: error.message
+        });
+      }
+    }
+    
+    // 提交事务
+    await conn.commit();
+    console.log('【后端】事务已提交');
+    
+    const response = {
+      message: `成功取消选择 ${successCount}/${questionIds.length} 道题目`,
+      successCount,
+      totalCount: questionIds.length,
+      notFoundCount,
+      notSelectedCount,
+      failedCount,
+      results
+    };
+    
+    // console.log('【后端】取消选择结果统计:', {
+    //   总请求数: questionIds.length,
+    //   成功: successCount,
+    //   未找到: notFoundCount,
+    //   未选中: notSelectedCount,
+    //   失败: failedCount
+    // });
+    // console.log('【后端】返回响应:', response);
+    // console.log('=+++++++++++++++++++++++++++++++++++++++++++++++++=');
+    
+    res.json(response);
+  } catch (error) {
+    if (conn) {
+      await conn.rollback();
+      // console.log('【后端】事务回滚');
+    }
+    console.error('【后端】批量取消选择题目失败:', error);
+    res.status(500).json({ 
+      message: '批量取消选择题目失败', 
+      error: error.message,
+      stack: process.env.NODE_ENV !== 'production' ? error.stack : undefined
+    });
+  } finally {
+    if (conn) {
+      conn.release();
+    }
+  }
+});
+
+// 获取题目统计信息
+router.get('/:id/stats', authenticate, async (req, res) => {
+  const { id } = req.params;
+  const { teacherId, questionType } = req.query;
+  
+  if (!teacherId || !id || !questionType) {
+    return res.status(400).json({ message: '缺少必要参数' });
+  }
+  
+  try {
+    // console.log(`获取题目统计信息, 题目ID: ${id}, 类型: ${questionType}, 教师ID: ${teacherId}`);
+    // console.log(`当前时间: ${new Date().toISOString()}`);
+    
+    // 获取题目的苹果数 - 这是学生打星评分
+    const [appleResult] = await executeWithRetry(async (conn) => {
+      console.log(`执行community_question_apples查询, 题目ID: ${id}, 类型: ${questionType}`);
+      return await conn.query(
+        `SELECT 
+           COUNT(DISTINCT user_id) as student_count,
+           IFNULL(SUM(apples_count), 0) as apple_count,
+           IFNULL(AVG(apples_count), 0) as avg_rating
+         FROM community_question_apples 
+         WHERE question_id = ? AND question_type = ?`,
+        [id, questionType]
+      );
+    });
+    
+    const appleCount = parseInt(appleResult[0]?.apple_count || 0);
+    const studentCount = parseInt(appleResult[0]?.student_count || 0);
+    // 计算平均评分 - 使用SQL的AVG更精确
+    const avgRating = parseFloat(appleResult[0]?.avg_rating || 0);
+    
+    // console.log(`【学生评分数据】题目ID: ${id}, 类型: ${questionType}`);
+    // console.log(`【学生评分数据】直接从community_question_apples表查询到的数据:`);
+    // console.log(`【学生评分数据】- 总评分数(appleCount): ${appleCount}`);
+    // console.log(`【学生评分数据】- 评分学生数(studentCount): ${studentCount}`);
+    // console.log(`【学生评分数据】- SQL计算的平均评分(avgRating): ${avgRating}`);
+    // console.log(`【学生评分数据】- 检查: ${appleCount} / ${studentCount} = ${studentCount > 0 ? (appleCount / studentCount) : 0}`);
+    console.log(`id: ${id}类型: ${questionType}总评分: ${appleCount}学生数: ${studentCount}平均分: ${avgRating}检查：${appleCount} / ${studentCount} = ${studentCount > 0 ? (appleCount / studentCount) : 0}`);
+    // 查询统计数据
+    const stats = await executeWithRetry(async (conn) => {
+      console.log(`执行teachers_selected_questions查询, 教师ID: ${teacherId}, 题目ID: ${id}, 类型: ${questionType}`);
+      const [rows] = await conn.query(
+        `SELECT 
+          question_id, 
+          question_type,
+          star_count,
+          post_count, 
+          comment_count, 
+          like_count, 
+          recommend_count, 
+          coin_count, 
+          favorite_count,
+          student_rating_total,
+          student_rating_count,
+          average_rating,
+          subject,
+          grade,
+          year,
+          type,
+          timeid,
+          \`select\`,
+          last_refreshed
+        FROM teachers_selected_questions 
+        WHERE teacher_id = ? AND question_id = ? AND question_type = ?`,
+        [teacherId, id, questionType]
+      );
+      
+      // 查看是否有任何数据
+      const foundRecord = rows.length > 0;
+      // console.log(`在teachers_selected_questions中${foundRecord ? '找到' : '未找到'}记录`);
+      
+      // 尝试获取题目元数据（主题、年级等）
+      let subject = null;
+      let grade = null;
+      let year = null;
+      let type = null;
+      let timeid = null;
+      let select = '0';  // 默认为未选中
+      
+      if (rows.length > 0) {
+        // 如果有记录，使用现有数据
+        subject = rows[0].subject;
+        grade = rows[0].grade;
+        year = rows[0].year;
+        type = rows[0].type;
+        timeid = rows[0].timeid;
+        select = rows[0].select || '0';  // 保持现有的选中状态
+      } else {
+        // 如果没有记录，尝试获取元数据
+        
+        if (questionType === 'image') {
+          // 获取图片题目的路径数据
+          try {
+            const [allPathsResult] = await conn.query(
+              `SELECT DISTINCT question_path FROM community_post_questions 
+               WHERE question_type = 'image' LIMIT 500`
+            );
+            
+            for (const pathObj of allPathsResult) {
+              const path = pathObj.question_path;
+              const folderName = path.split('/').pop();
+              const generatedId = generateQuestionId(folderName);
+              
+              if (generatedId == id) {
+                console.log(`【获取统计】找到路径: ${path}, 生成ID: ${generatedId}`);
+                // 解析路径信息
+                const parts = path.split('/').filter(p => p.length > 0);
+                if (parts.length >= 5) {
+                  subject = parts[1] || null;  // 线性代数
+                  grade = parts[2] || null;    // 大一
+                  year = parts[3] || null;     // 2019
+                  type = parts[4] || null;     // A卷
+                  if (parts.length >= 6) {
+                    timeid = parts[5] || null; // 20250319T154706
+                  }
+                  break;
+                }
+              }
+            }
+          } catch (error) {
+            console.error('获取图片路径数据失败:', error);
+          }
+        } else if (questionType === 'latex') {
+          // 获取LaTeX题目的元数据 - 从latex_questions表获取
+          try {
+            const [latexData] = await conn.query(
+              `SELECT subject, grade, year, type, folder_name 
+               FROM latex_questions
+               WHERE id = ?`,
+              [id]
+            );
+            
+            if (latexData && latexData.length > 0) {
+              // console.log(`【获取统计】从latex_questions表获取到题目信息:`, latexData[0]);
+              subject = latexData[0].subject || null;
+              grade = latexData[0].grade || null;
+              year = latexData[0].year || null;
+              type = latexData[0].type || null;
+              timeid = latexData[0].folder_name || null;
+            } else {
+              // console.log(`【获取统计】未在latex_questions表中找到ID为${id}的题目`);
+            }
+          } catch (error) {
+            console.error('获取LaTeX题目元数据失败:', error);
+          }
+        }
+      }
+      
+      if (rows.length === 0) {
+        // 如果不存在记录，返回默认值但同时自动创建记录
+        console.log(`【warning】未找到题目在teachers_selected_questions中的记录，使用默认值并创建记录`);
+        const defaultStats = {
+          id: parseInt(id),
+          type: questionType,
+          starCount: 0,
+          postCount: 0,
+          commentCount: 0,
+          likeCount: 0,
+          recommendCount: 0,
+          coinCount: 0,
+          favoriteCount: 0,
+          appleCount: appleCount,
+          studentCount: studentCount,
+          averageRating: avgRating,
+          subject: subject,
+          grade: grade,
+          year: year,
+          type: type,
+          timeid: timeid,
+          select: select,
+          lastRefreshed: new Date().toISOString(),
+          relatedPosts: []
+        };
+        
+        // 尝试创建记录，防止数据丢失
+        try {
+          // 创建新记录
+          if (questionType === 'latex') {
+            await conn.query(
+              `INSERT INTO teachers_selected_questions 
+               (teacher_id, question_id, question_type, question_folder_or_id, 
+                subject, grade, year, type, timeid, \`select\`, 
+                student_rating_total, student_rating_count, average_rating)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                teacherId, 
+                id, 
+                questionType, 
+                id.toString(),
+                subject,
+                grade,
+                year,
+                type,
+                timeid,
+                select,
+                appleCount,
+                studentCount,
+                avgRating
+              ]
+            );
+          } else {
+            await conn.query(
+              `INSERT INTO teachers_selected_questions 
+               (teacher_id, question_id, question_type, question_folder_or_id, 
+                subject, grade, year, type, timeid, \`select\`, 
+                student_rating_total, student_rating_count, average_rating)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                teacherId, 
+                id, 
+                questionType, 
+                `folder_${id}`,
+                subject,
+                grade,
+                year,
+                type,
+                timeid,
+                select,
+                appleCount,
+                studentCount,
+                avgRating
+              ]
+            );
+          }
+          console.log(`已创建题目统计记录，题目ID: ${id}, 类型: ${questionType}, 教师ID: ${teacherId}`);
+        } catch (updateError) {
+          console.error(`创建题目统计记录失败:`, updateError);
+        }
+        
+        return { ...defaultStats, isCreated: true };
+      }
+      
+      // console.log(`【学生评分数据】从teachers_selected_questions表查询到的数据:`);
+      // console.log(`【学生评分数据】- 总评分数(student_rating_total): ${rows[0].student_rating_total || 0}`);
+      // console.log(`【学生评分数据】- 评分学生数(student_rating_count): ${rows[0].student_rating_count || 0}`);
+      // console.log(`【学生评分数据】- 平均评分(average_rating): ${rows[0].average_rating || 0}`);
+      console.log(`是否选中(select): ${rows[0].select || '0'}`);
+      
+      // 检查student_rating_total和student_rating_count是否为0但community_question_apples有数据
+      // 这可能表明数据不同步，我们需要更新它
+      const dbTotalRating = parseInt(rows[0].student_rating_total || 0);
+      const dbStudentCount = parseInt(rows[0].student_rating_count || 0);
+      
+      // 如果数据库中的评分数据与实际计算的不同，则自动更新
+      if (dbTotalRating !== appleCount || dbStudentCount !== studentCount) {
+        console.log(`【数据不同步】数据库记录与实际数据不同，将更新记录`);
+        console.log(`【数据不同步】数据库: 总=${dbTotalRating}, 学生=${dbStudentCount}, 平均=${rows[0].average_rating}`);
+        console.log(`【数据不同步】实际: 总=${appleCount}, 学生=${studentCount}, 平均=${avgRating}`);
+        
+        try {
+          await conn.query(
+            `UPDATE teachers_selected_questions 
+             SET student_rating_total = ?,
+                 student_rating_count = ?,
+                 average_rating = ?,
+                 last_refreshed = NOW()
+             WHERE teacher_id = ? AND question_id = ? AND question_type = ?`,
+            [appleCount, studentCount, avgRating, teacherId, id, questionType]
+          );
+          console.log(`【数据不同步】已更新评分数据`);
+        } catch (updateError) {
+          console.error(`【数据不同步】更新评分数据失败:`, updateError);
+        }
+      }
+      
+      // 如果缺少元数据（如subject, grade等），尝试更新
+      if ((!rows[0].subject || !rows[0].grade || !rows[0].year || !rows[0].type) && 
+          (subject || grade || year || type || timeid)) {
+        console.log(`【元数据更新】发现缺少的元数据，尝试更新`);
+        try {
+          await conn.query(
+            `UPDATE teachers_selected_questions SET
+             subject = COALESCE(?, subject),
+             grade = COALESCE(?, grade),
+             year = COALESCE(?, year),
+             type = COALESCE(?, type),
+             timeid = COALESCE(?, timeid)
+             WHERE teacher_id = ? AND question_id = ? AND question_type = ?`,
+            [subject, grade, year, type, timeid, teacherId, id, questionType]
+          );
+          console.log(`【元数据更新】已更新题目元数据`);
+        } catch (updateError) {
+          console.error(`【元数据更新】更新元数据失败:`, updateError);
+        }
+      }
+      
+      // 查询引用该题目的帖子
+      let postQueryParams = [questionType];
+      let postQueryCondition = '';
+      
+      if (questionType === 'latex') {
+        // Latex题目使用question_id查询
+        postQueryCondition = 'AND q.question_id = ?';
+        postQueryParams.push(id);
+      } else {
+        // 图片题目使用question_path查询
+        // 为确保正确查询路径，先读取metadata文件获取完整路径
+        try {
+          // 先获取所有图片题目相关的帖子路径，进行分析
+          const [allPathsResult] = await conn.query(
+            `SELECT DISTINCT question_path FROM community_post_questions 
+             WHERE question_type = 'image' LIMIT 100`
+          );
+        
+          // console.log('【调试】所有图片题目路径样本:', allPathsResult.map(r => r.question_path).join(', '));
+          
+          // 直接通过ID匹配
+          let matchFound = false;
+          for (const pathObj of allPathsResult) {
+            const path = pathObj.question_path;
+            const pathFolderName = path.split('/').pop();
+            const generatedId = generateQuestionId(pathFolderName);
+            
+            if (generatedId == id) {
+              console.log(`【获取统计】找到ID匹配路径: ${path}, 生成ID: ${generatedId}`);
+              postQueryCondition = 'AND q.question_path = ?';
+              postQueryParams.push(path);
+              matchFound = true;
+              break;
+            }
+          }
+          
+          if (!matchFound) {
+            // 没有直接通过ID匹配到路径，退回到常规查询方法
+            console.log(`【获取统计】未通过ID匹配找到路径，尝试其他方法`);
+
+            // 查询teachers_selected_questions表获取基本信息
+            const [questionInfo] = await conn.query(
+              `SELECT * FROM teachers_selected_questions 
+               WHERE teacher_id = ? AND question_id = ? AND question_type = 'image'`,
+              [teacherId, id]
+            );
+            
+            // 尝试构建路径模式
+            if (questionInfo && questionInfo.length > 0 && 
+                questionInfo[0].subject && questionInfo[0].grade && 
+                questionInfo[0].year && questionInfo[0].question_folder_or_id) {
+              
+              // 移除folder_前缀获取可能的文件夹名
+              const subject = questionInfo[0].subject;
+              const grade = questionInfo[0].grade;
+              const year = questionInfo[0].year;
+              const folderName = questionInfo[0].question_folder_or_id.replace('folder_', '');
+              
+              console.log(`【获取统计】题目信息: 科目=${subject}, 年级=${grade}, 年份=${year}, 文件夹=${folderName}, ID=${id}`);
+              
+              // 通过题目ID直接匹配最可能的路径 - 精确匹配
+              const [preciseMatch] = await conn.query(
+                `SELECT DISTINCT question_path 
+                 FROM community_post_questions 
+                 WHERE question_type = 'image' 
+                 AND question_path LIKE '%${subject}%'
+                 AND question_path LIKE '%${grade}%'
+                 AND question_path LIKE '%${year}%'
+                 AND question_path LIKE '%${folderName}%'
+                 AND SUBSTR(question_path, -19) = '${folderName}'
+                 LIMIT 1`
+              );
+              
+              if (preciseMatch && preciseMatch.length > 0) {
+                // 找到匹配的路径
+                const exactPath = preciseMatch[0].question_path;
+                console.log(`【获取统计】找到精确匹配的路径: ${exactPath}`);
+                postQueryCondition = 'AND q.question_path = ?';
+                postQueryParams.push(exactPath);
+              } else {
+                // 如果精确匹配没有找到，尝试路径模式匹配
+                // console.log(`【获取统计】未找到精确匹配，尝试路径模式匹配`);
+                
+                const pathPattern = `/prtsc/${subject}/${grade}/${year}/%/${folderName}`;
+                console.log(`【获取统计】未找到精确匹配，路径模式: ${pathPattern}`);
+                
+                const [pathMatches] = await conn.query(
+                  `SELECT DISTINCT question_path 
+                   FROM community_post_questions 
+                   WHERE question_type = 'image' 
+                   AND question_path LIKE ? 
+                   LIMIT 1`,
+                  [`${pathPattern}%`]
+                );
+                
+                if (pathMatches && pathMatches.length > 0) {
+                  const exactPath = pathMatches[0].question_path;
+                  // console.log(`【获取统计】找到路径模式匹配: ${exactPath}`);
+                  postQueryCondition = 'AND q.question_path = ?';
+                  postQueryParams.push(exactPath);
+                } else {
+                  // 尝试时间戳模式匹配
+                  console.log(`【获取统计】尝试时间戳模式匹配`);
+                  
+                  const [timeStampMatches] = await conn.query(
+                    `SELECT DISTINCT question_path 
+                     FROM community_post_questions 
+                     WHERE question_type = 'image' 
+                     AND question_path LIKE '%${subject}%' 
+                     AND question_path LIKE '%${grade}%' 
+                     AND question_path LIKE '%${year}%' 
+                     AND question_path REGEXP '[0-9]{8}T[0-9]{6}'
+                     ORDER BY question_path DESC
+                     LIMIT 1`
+                  );
+                  
+                  if (timeStampMatches && timeStampMatches.length > 0) {
+                    const exactPath = timeStampMatches[0].question_path;
+                    // console.log(`【获取统计】找到时间戳匹配: ${exactPath}`);
+                    postQueryCondition = 'AND q.question_path = ?';
+                    postQueryParams.push(exactPath);
+                  } else {
+                    // 最后尝试模糊匹配
+                    console.log(`【获取统计】使用最宽泛的匹配条件`);
+                    postQueryCondition = 'AND q.question_path LIKE ?';
+                    postQueryParams.push(`%${folderName}%`);
+                  }
+                }
+              }
+            } else {
+              // 没有足够信息构建路径，使用ID尝试匹配
+              console.log(`【获取统计】没有足够信息构建路径，直接使用ID: ${id}`);
+              postQueryCondition = 'AND q.question_id = ?';
+              postQueryParams.push(id);
+            }
+          }
+        } catch (pathError) {
+          console.error(`【获取统计】查询路径出错:`, pathError);
+          // 使用ID进行匹配作为备选
+          postQueryCondition = 'AND (q.question_id = ? OR q.question_path LIKE ?)';
+          postQueryParams.push(id, `%${id}%`);
+        }
+      }
+      
+      const [postsResult] = await conn.query(
+        `SELECT 
+          p.id, 
+          p.title, 
+          u.name as author_name,
+          p.created_at,
+          (SELECT COUNT(*) FROM community_comments WHERE post_id = p.id) as comment_count,
+          (SELECT COUNT(*) FROM community_interactions WHERE post_id = p.id AND type = 'like') as like_count,
+          (SELECT COUNT(*) FROM community_interactions WHERE post_id = p.id AND type = 'favorite') as favorite_count,
+          (SELECT COUNT(*) FROM community_interactions WHERE post_id = p.id AND type = 'coin') as coin_count
+        FROM 
+          community_posts p
+        JOIN 
+          community_post_questions q ON p.id = q.post_id
+        LEFT JOIN
+          users u ON p.user_id = u.id
+        WHERE 
+          q.question_type = ?
+          ${postQueryCondition}
+        ORDER BY 
+          p.created_at DESC`,
+        postQueryParams
+      );
+      
+      // 格式化数据
+      const resultData = {
+        id: parseInt(id),
+        type: questionType,
+        starCount: rows[0].star_count || 0,
+        postCount: rows[0].post_count || 0,
+        commentCount: rows[0].comment_count || 0,
+        likeCount: rows[0].like_count || 0,
+        recommendCount: rows[0].recommend_count || 0,
+        coinCount: rows[0].coin_count || 0,
+        favoriteCount: rows[0].favorite_count || 0,
+        // 确保使用最新的评分数据，优先使用从community_question_apples表获取的数据
+        appleCount: appleCount, 
+        studentCount: studentCount,
+        averageRating: avgRating, 
+        lastRefreshed: rows[0].last_refreshed || new Date().toISOString(),
+        relatedPosts: postsResult.map(post => ({
+          id: post.id,
+          title: post.title,
+          author: post.author_name,
+          commentCount: post.comment_count,
+          likeCount: post.like_count,
+          favoriteCount: post.favorite_count,
+          coinCount: post.coin_count,
+          created_at: post.created_at
+        }))
+      };
+      
+      // console.log(`【学生评分数据】最终返回的数据:`);
+      // console.log(`【学生评分数据】- 总评分数(appleCount): ${resultData.appleCount}`);
+      // console.log(`【学生评分数据】- 评分学生数(studentCount): ${resultData.studentCount}`);
+      // console.log(`【学生评分数据】- 平均评分(averageRating): ${resultData.averageRating}`);
+      
+      return resultData;
+    });
+    
+    res.json(stats);
+  } catch (error) {
+    console.error('获取题目统计信息失败:', error);
+    res.status(500).json({ message: '获取题目统计信息失败', error: error.message });
+  }
+});
+
+// 刷新题目统计信息
+router.post('/:id/refresh-stats', authenticate, async (req, res) => {
+  const { id } = req.params;
+  const { teacherId, questionType } = req.body;
+  
+  if (!teacherId || !id || !questionType) {
+    return res.status(400).json({ message: '缺少必要参数' });
+  }
+  
+  try {
+    console.log(`=====================================`);
+    console.log(`开始刷新题目统计信息, 题目ID: ${id}, 类型: ${questionType}, 教师ID: ${teacherId}`);
+    console.log(`当前时间: ${new Date().toISOString()}`);
+    console.log(`=====================================`);
+    
+    // 测试所有图片路径，查看哪个匹配ID
+    const [allPathsResult] = await executeWithRetry(async (conn) => {
+      return await conn.query(
+        `SELECT DISTINCT question_path FROM community_post_questions 
+         WHERE question_type = 'image' LIMIT 100`
+      );
+    });
+    
+    // console.log('测试ID匹配结果:');
+    for (const path of allPathsResult) {
+      const pathId = generateQuestionId(path.question_path.split('/').pop());
+      console.log(`路径: ${path.question_path}, 生成ID: ${pathId}, 是否匹配: ${pathId == id}`);
+    }
+    
+    // 获取题目的苹果数 - 这是题目自身唯一的直接数据
+    const [appleResult] = await executeWithRetry(async (conn) => {
+      return await conn.query(
+        `SELECT 
+           IFNULL(AVG(apples_count), 0) as apple_average,
+           IFNULL(SUM(apples_count), 0) as apple_count,
+           COUNT(DISTINCT user_id) as student_count
+         FROM community_question_apples 
+         WHERE question_id = ? AND question_type = ?`,
+        [id, questionType]
+      );
+    });
+    
+    const averageRating = parseFloat(appleResult[0]?.apple_average || 0);
+    const appleCount = parseInt(appleResult[0]?.apple_count || 0);
+    const studentCount = parseInt(appleResult[0]?.student_count || 0);
+    
+    // console.log(`【学生评分数据】题目ID: ${id}, 类型: ${questionType}`);
+    // console.log(`【学生评分数据】直接从community_question_apples表查询到的数据:`);
+    // console.log(`【学生评分数据】- 总评分数(appleCount): ${appleCount}`);
+    // console.log(`【学生评分数据】- 评分学生数(studentCount): ${studentCount}`);
+    // console.log(`【学生评分数据】- SQL计算的平均评分(averageRating): ${averageRating}`);
+
+    // 获取引用该题目的帖子
+    const [postsResult] = await executeWithRetry(async (conn) => {
+      // 对于图片题目，需要构造正确的路径查询
+      let query = `SELECT 
+          p.id
+         FROM 
+          community_posts p
+         JOIN 
+          community_post_questions q ON p.id = q.post_id
+         WHERE 
+          q.question_type = ?`;
+      
+      let params = [questionType];
+      
+      if (questionType === 'latex') {
+        // Latex题目使用question_id查询
+        query += ` AND q.question_id = ?`;
+        params.push(id);
+      } else {
+        // 图片题目使用question_path查询
+        // 查询teachers_selected_questions表获取路径信息
+        const [questionInfo] = await conn.query(
+          `SELECT question_folder_or_id FROM teachers_selected_questions 
+           WHERE teacher_id = ? AND question_id = ? AND question_type = 'image'`,
+          [teacherId, id]
+        );
+        
+        // 如果能找到题目信息
+        if (questionInfo && questionInfo.length > 0) {
+          // 移除folder_前缀获取文件夹名称
+          const folderName = questionInfo[0].question_folder_or_id.replace('folder_', '');
+          
+          try {
+            // 先获取所有图片题目相关的帖子路径
+            const [allPaths] = await conn.query(
+              `SELECT DISTINCT question_path FROM community_post_questions 
+               WHERE question_type = 'image' LIMIT 100`
+            );
+            
+            // 直接通过ID匹配
+            let matchFound = false;
+            for (const pathObj of allPaths) {
+              const path = pathObj.question_path;
+              const pathFolderName = path.split('/').pop();
+              const generatedId = generateQuestionId(pathFolderName);
+              
+              if (generatedId == id) {
+                console.log(`【刷新统计】找到ID匹配路径: ${path}, 生成ID: ${generatedId}`);
+                query += ` AND q.question_path = ?`;
+                params.push(path);
+                matchFound = true;
+                break;
+              }
+            }
+            
+            if (!matchFound) {
+              // 备选方案：尝试通过元数据匹配
+              const [pathMatches] = await conn.query(
+                `SELECT DISTINCT question_path FROM community_post_questions 
+                 WHERE question_type = 'image' AND question_path LIKE '%${folderName}%' LIMIT 1`
+              );
+              
+              if (pathMatches && pathMatches.length > 0) {
+                const exactPath = pathMatches[0].question_path;
+                console.log(`【刷新统计】通过文件夹名匹配: ${exactPath}`);
+                query += ` AND q.question_path = ?`;
+                params.push(exactPath);
+              } else {
+                // 使用模糊匹配
+                console.log(`【刷新统计】使用模糊匹配: %${folderName}%`);
+                query += ` AND q.question_path LIKE ?`;
+                params.push(`%${folderName}%`);
+              }
+            }
+          } catch (pathError) {
+            console.error(`【刷新统计】查询出错:`, pathError);
+            query += ` AND q.question_path LIKE ?`;
+            params.push(`%${folderName}%`);
+          }
+        } else {
+          // 没有题目信息，尝试直接ID匹配
+          console.log(`【刷新统计】没有题目信息，使用ID: ${id}`);
+          query += ` AND q.question_id = ?`;
+          params.push(id);
+        }
+      }
+      
+      // console.log('查询引用帖子SQL:', query);
+      // console.log('查询引用帖子参数:', params);
+      
+      return await conn.query(query, params);
+    });
+    
+    const postCount = postsResult.length;
+    const postIds = postsResult.map(post => post.id);
+    
+    // 如果没有引用该题目的帖子，设置所有统计为0
+    if (postIds.length === 0) {
+      const stats = {
+        id: parseInt(id),
+        type: questionType,
+        starCount: 0, // 教师端的打星功能，这里暂时设为0
+        postCount: 0,
+        commentCount: 0,
+        likeCount: 0,
+        recommendCount: 0,
+        coinCount: 0,
+        favoriteCount: 0,
+        appleCount: appleCount,
+        studentCount: studentCount,
+        averageRating: averageRating,
+        lastRefreshed: new Date().toISOString(),
+        relatedPosts: []
+      };
+      
+      // 更新或创建统计记录
+      await updateQuestionStats(teacherId, id, questionType, stats);
+      
+      return res.json(stats);
+    }
+    
+    // 将帖子ID列表转换为SQL IN语句的参数
+    const postIdsPlaceholders = postIds.map(() => '?').join(',');
+    
+    // 计算评论数量
+    const [commentResult] = await executeWithRetry(async (conn) => {
+      return await conn.query(
+        `SELECT COUNT(*) as count 
+         FROM community_comments 
+         WHERE post_id IN (${postIdsPlaceholders})`,
+        [...postIds]
+      );
+    });
+    
+    const commentCount = commentResult[0]?.count || 0;
+    
+    // 计算互动数据 (点赞、收藏、投币、推荐)
+    const interactionTypes = ['like', 'favorite', 'coin', 'recommend'];
+    const interactionCounts = {};
+    
+    for (const type of interactionTypes) {
+      const [result] = await executeWithRetry(async (conn) => {
+        return await conn.query(
+          `SELECT COUNT(*) as count 
+           FROM community_interactions 
+           WHERE post_id IN (${postIdsPlaceholders}) AND type = ?`,
+          [...postIds, type]
+        );
+      });
+      
+      interactionCounts[type] = result[0]?.count || 0;
+    }
+    
+    // 获取引用该题目的帖子详情
+    const [detailedPostsResult] = await executeWithRetry(async (conn) => {
+      // 构建查询条件，保持与上面的查询一致
+      let query = `SELECT 
+          p.id, 
+          p.title, 
+          u.name as author_name,
+          p.created_at,
+          (SELECT COUNT(*) FROM community_comments WHERE post_id = p.id) as comment_count,
+          (SELECT COUNT(*) FROM community_interactions WHERE post_id = p.id AND type = 'like') as like_count,
+          (SELECT COUNT(*) FROM community_interactions WHERE post_id = p.id AND type = 'favorite') as favorite_count,
+          (SELECT COUNT(*) FROM community_interactions WHERE post_id = p.id AND type = 'coin') as coin_count
+         FROM 
+          community_posts p
+         JOIN 
+          community_post_questions q ON p.id = q.post_id
+         LEFT JOIN
+          users u ON p.user_id = u.id
+         WHERE 
+          q.question_type = ?`;
+      
+      // 使用相同的参数列表
+      let params = [questionType];
+      
+      if (questionType === 'latex') {
+        // Latex题目使用question_id查询
+        query += ` AND q.question_id = ?`;
+        params.push(id);
+      } else {
+        // 图片题目使用question_path查询
+        // 查询teachers_selected_questions表获取路径信息
+        const [questionInfo] = await conn.query(
+          `SELECT question_folder_or_id FROM teachers_selected_questions 
+           WHERE teacher_id = ? AND question_id = ? AND question_type = 'image'`,
+          [teacherId, id]
+        );
+        
+        // 如果能找到题目信息
+        if (questionInfo && questionInfo.length > 0) {
+          // 移除folder_前缀获取文件夹名称
+          const folderName = questionInfo[0].question_folder_or_id.replace('folder_', '');
+          
+          try {
+            // 先获取所有图片题目相关的帖子路径
+            const [allPaths] = await conn.query(
+              `SELECT DISTINCT question_path FROM community_post_questions 
+               WHERE question_type = 'image' LIMIT 100`
+            );
+            
+            // 直接通过ID匹配
+            let matchFound = false;
+            for (const pathObj of allPaths) {
+              const path = pathObj.question_path;
+              const pathFolderName = path.split('/').pop();
+              const generatedId = generateQuestionId(pathFolderName);
+              
+              if (generatedId == id) {
+                console.log(`【刷新统计】找到ID匹配路径: ${path}, 生成ID: ${generatedId}`);
+                query += ` AND q.question_path = ?`;
+                params.push(path);
+                matchFound = true;
+                break;
+              }
+            }
+            
+            if (!matchFound) {
+              // 备选方案：尝试通过元数据匹配
+              const [pathMatches] = await conn.query(
+                `SELECT DISTINCT question_path FROM community_post_questions 
+                 WHERE question_type = 'image' AND question_path LIKE '%${folderName}%' LIMIT 1`
+              );
+              
+              if (pathMatches && pathMatches.length > 0) {
+                const exactPath = pathMatches[0].question_path;
+                console.log(`【刷新统计】通过文件夹名匹配: ${exactPath}`);
+                query += ` AND q.question_path = ?`;
+                params.push(exactPath);
+              } else {
+                // 使用模糊匹配
+                console.log(`【刷新统计】使用模糊匹配: %${folderName}%`);
+                query += ` AND q.question_path LIKE ?`;
+                params.push(`%${folderName}%`);
+              }
+            }
+          } catch (pathError) {
+            console.error(`【刷新统计】查询出错:`, pathError);
+            query += ` AND q.question_path LIKE ?`;
+            params.push(`%${folderName}%`);
+          }
+        } else {
+          // 没有题目信息，尝试直接ID匹配
+          console.log(`【刷新统计】没有题目信息，使用ID: ${id}`);
+          query += ` AND q.question_id = ?`;
+          params.push(id);
+        }
+      }
+      
+      query += ` ORDER BY p.created_at DESC LIMIT 10`;
+      // console.log('查询帖子详情SQL:', query);
+      // console.log('查询帖子详情参数:', params);
+      
+      return await conn.query(query, params);
+    });
+    
+    // 创建统计数据对象
+    const stats = {
+      id: parseInt(id),
+      type: questionType,
+      starCount: 0, // 教师端的打星功能，这里暂时设为0
+      postCount,
+      commentCount,
+      likeCount: interactionCounts.like,
+      recommendCount: interactionCounts.recommend,
+      coinCount: interactionCounts.coin,
+      favoriteCount: interactionCounts.favorite,
+      appleCount: appleCount,
+      studentCount: studentCount,
+      averageRating: averageRating,
+      lastRefreshed: new Date().toISOString(),
+      relatedPosts: detailedPostsResult.map(post => ({
+        id: post.id,
+        title: post.title,
+        author: post.author_name,
+        commentCount: post.comment_count,
+        likeCount: post.like_count,
+        favoriteCount: post.favorite_count,
+        coinCount: post.coin_count,
+        created_at: post.created_at
+      }))
+    };
+    
+    // 更新或创建统计记录
+    await updateQuestionStats(teacherId, id, questionType, stats);
+    
+    res.json(stats);
+  } catch (error) {
+    console.error('刷新题目统计信息失败:', error);
+    res.status(500).json({ message: '刷新题目统计信息失败', error: error.message });
+  }
+});
+
+// 辅助函数：更新题目统计记录
+async function updateQuestionStats(teacherId, questionId, questionType, stats) {
+  console.log(`【开始更新统计】教师ID: ${teacherId}, 题目ID: ${questionId}, 类型: ${questionType}`);
+  console.log(`【更新统计数据】`, {
+    post_count: stats.postCount,
+    comment_count: stats.commentCount,
+    like_count: stats.likeCount,
+    recommend_count: stats.recommendCount,
+    coin_count: stats.coinCount,
+    favorite_count: stats.favoriteCount,
+    apple_count: stats.appleCount,
+    student_count: stats.studentCount,
+    average_rating: stats.averageRating
+  });
+  
+  try {
+    return await executeWithRetry(async (conn) => {
+      try {
+        // 开始事务
+        await conn.beginTransaction();
+        // console.log(`【更新统计】开始数据库事务`);
+        
+        // 对于图片题目，尝试获取完整路径并解析
+        let subject = null;
+        let grade = null;
+        let year = null; 
+        let type = null;
+        let timeid = null;
+        
+        if (questionType === 'image') {
+          // 查找匹配的图片路径
+          const [allPaths] = await conn.query(
+            `SELECT DISTINCT question_path FROM community_post_questions 
+             WHERE question_type = 'image' LIMIT 500`
+          );
+          
+          // 查找与ID匹配的路径
+          for (const pathObj of allPaths) {
+            const path = pathObj.question_path;
+            const folderName = path.split('/').pop();
+            const generatedId = generateQuestionId(folderName);
+            
+            if (generatedId == questionId) {
+              // console.log(`【更新统计】找到ID匹配的完整路径: ${path}`);
+              
+              // 拆解路径，格式如: /prtsc/线性代数/大一/2019/A卷/20250319T154706
+              const parts = path.split('/').filter(p => p.length > 0);
+              
+              if (parts.length >= 5) {
+                // 忽略第一个元素(prtsc)
+                subject = parts[1] || null;  // 线性代数
+                // 保留完整的年级格式，如"大一"
+                grade = parts[2] || null;    // 大一
+                year = parts[3] || null;     // 2019
+                type = parts[4] || null;     // A卷
+                
+                if (parts.length >= 6) {
+                  timeid = parts[5] || null; // 20250319T154706
+                }
+                
+                console.log(`【更新统计】拆解路径: subject=${subject}, grade=${grade}, year=${year}, type=${type}, timeid=${timeid}`);
+                break;
+              }
+            }
+          }
+        } else if (questionType === 'latex') {
+          // 对于LaTeX题目，从latex_questions表获取元数据
+          try {
+            const [latexData] = await conn.query(
+              `SELECT subject, grade, year, type, folder_name 
+               FROM latex_questions
+               WHERE id = ?`,
+              [questionId]
+            );
+            
+            if (latexData && latexData.length > 0) {
+              subject = latexData[0].subject || null;
+              grade = latexData[0].grade || null;
+              year = latexData[0].year || null;
+              type = latexData[0].type || null;
+              timeid = latexData[0].folder_name || null;
+              console.log(`【更新统计】从latex_questions表获取到LaTeX题目信息: subject=${subject}, grade=${grade}, year=${year}, type=${type}, timeid=${timeid}`);
+            } else {
+              console.log(`【更新统计】未在latex_questions表中找到ID为${questionId}的LaTeX题目`);
+            }
+          } catch (latexError) {
+            console.error(`【更新统计】获取LaTeX题目元数据失败:`, latexError);
+          }
+        }
+        
+        // 检查记录是否存在
+        const [existingRows] = await conn.query(
+          `SELECT id, \`select\` FROM teachers_selected_questions 
+           WHERE teacher_id = ? AND question_id = ? AND question_type = ?`,
+          [teacherId, questionId, questionType]
+        );
+        
+        const isSelected = existingRows.length > 0 ? (existingRows[0].select === '1') : false;
+        // console.log(`【更新统计】检查记录是否存在: ${existingRows.length > 0 ? '存在' : '不存在'}, 是否被选中: ${isSelected}`);
+        
+        if (existingRows.length === 0) {
+          // 如果记录不存在，需要创建一个基本记录
+          console.log(`【更新统计】创建新记录`);
+          
+          if (questionType === 'latex') {
+            // Latex题目
+            await conn.query(
+              `INSERT INTO teachers_selected_questions 
+               (teacher_id, question_id, question_type, question_folder_or_id, 
+                subject, grade, year, type, timeid, \`select\`) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '0')`,
+              [teacherId, questionId, questionType, questionId.toString(),
+               subject, grade, year, type, timeid]
+            );
+          } else {
+            // 图片题目，包含拆解的路径信息
+            await conn.query(
+              `INSERT INTO teachers_selected_questions 
+               (teacher_id, question_id, question_type, question_folder_or_id, 
+                subject, grade, year, type, timeid, \`select\`) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '0')`,
+              [teacherId, questionId, questionType, `folder_${questionId}`, 
+               subject, grade, year, type, timeid]
+            );
+          }
+          
+          console.log(`【更新统计】创建新记录成功`);
+        } else if ((questionType === 'image' || questionType === 'latex') && 
+                   (subject || grade || year || type || timeid)) {
+          // 如果记录存在并且我们获取到了元数据，更新路径信息但保留select状态
+          const currentSelect = existingRows[0].select || '0';
+          console.log(`【更新统计】更新已有记录的元数据信息，保留select=${currentSelect}`);
+          await conn.query(
+            `UPDATE teachers_selected_questions SET
+             subject = COALESCE(?, subject),
+             grade = COALESCE(?, grade),
+             year = COALESCE(?, year),
+             type = COALESCE(?, type), 
+             timeid = COALESCE(?, timeid)
+             WHERE teacher_id = ? AND question_id = ? AND question_type = ?`,
+            [subject, grade, year, type, timeid, teacherId, questionId, questionType]
+          );
+        }
+        
+        // 在更新前再次获取最新的community_question_apples数据，确保数据准确性
+        const [appleResult] = await conn.query(
+          `SELECT 
+             IFNULL(AVG(apples_count), 0) as average_rating,
+             IFNULL(SUM(apples_count), 0) as apple_count,
+             COUNT(DISTINCT user_id) as student_count
+           FROM community_question_apples 
+           WHERE question_id = ? AND question_type = ?`,
+          [questionId, questionType]
+        );
+        
+        const averageRating = parseFloat(appleResult[0]?.average_rating || 0);
+        const appleCount = parseInt(appleResult[0]?.apple_count || 0);
+        const studentCount = parseInt(appleResult[0]?.student_count || 0);
+        
+        // console.log(`【更新统计】从community_question_apples表获取的最新数据：`);
+        // console.log(`【更新统计】- 总评分数: ${appleCount}`);
+        // console.log(`【更新统计】- 评分学生数: ${studentCount}`);
+        // console.log(`【更新统计】- 平均评分: ${averageRating}`);
+        
+        // 更新统计数据
+        // console.log(`【更新统计】执行UPDATE SQL`);
+        
+        const updateQuery = `UPDATE teachers_selected_questions SET
+           star_count = ?,
+           post_count = ?,
+           comment_count = ?,
+           like_count = ?,
+           recommend_count = ?,
+           coin_count = ?,
+           favorite_count = ?,
+           student_rating_total = ?,
+           student_rating_count = ?,
+           average_rating = ?,
+           last_refreshed = CURRENT_TIMESTAMP
+           WHERE teacher_id = ? AND question_id = ? AND question_type = ?`;
+           
+        const updateParams = [
+          stats.starCount,
+          stats.postCount,
+          stats.commentCount,
+          stats.likeCount,
+          stats.recommendCount,
+          stats.coinCount,
+          stats.favoriteCount,
+          appleCount,  // 使用最新获取的数据
+          studentCount, // 使用最新获取的数据
+          averageRating, // 使用最新获取的数据
+          teacherId,
+          questionId,
+          questionType
+        ];
+        
+        console.log(`【更新统计】SQL参数:`, updateParams);
+        
+        const [updateResult] = await conn.query(updateQuery, updateParams);
+        
+        // console.log(`【更新统计】SQL执行结果:`, {
+        //   affectedRows: updateResult.affectedRows,
+        //   changedRows: updateResult.changedRows,
+        //   message: updateResult.message,
+        //   info: updateResult.info
+        // });
+        
+        // 检查更新是否成功
+        if (updateResult.affectedRows === 0) {
+          console.error(`【更新统计】更新失败，没有找到匹配的记录`);
+          throw new Error('更新失败，没有找到匹配的记录');
+        } else if (updateResult.changedRows === 0) {
+          console.log(`【更新统计】数据没有变化或已经是最新的`);
+        } else {
+          console.log(`【更新统计】更新成功，已修改 ${updateResult.changedRows} 行`);
+        }
+        
+        // 验证数据是否已更新
+        const [verifyRows] = await conn.query(
+          `SELECT * FROM teachers_selected_questions 
+           WHERE teacher_id = ? AND question_id = ? AND question_type = ?`,
+          [teacherId, questionId, questionType]
+        );
+        
+        if (verifyRows.length > 0) {
+          const record = verifyRows[0];
+          console.log(`【更新统计】验证更新结果:`, {
+            post_count: record.post_count,
+            comment_count: record.comment_count,
+            like_count: record.like_count,
+            student_rating_total: record.student_rating_total,
+            student_rating_count: record.student_rating_count,
+            average_rating: record.average_rating,
+            subject: record.subject,
+            grade: record.grade,
+            year: record.year,
+            type: record.type,
+            timeid: record.timeid,
+            select: record.select
+          });
+        } else {
+          console.error(`【更新统计】验证失败，找不到更新后的记录`);
+        }
+        
+        // 提交事务
+        await conn.commit();
+        // console.log(`【更新统计】事务已提交`);
+        
+        return updateResult;
+      } catch (trxError) {
+        // 发生错误时回滚事务
+        await conn.rollback();
+        console.error(`【更新统计】事务回滚，错误:`, trxError);
+        throw trxError;
+      }
+    });
+  } catch (error) {
+    console.error(`【更新统计】更新失败，错误:`, error);
+    throw error;
+  }
+}
+
+// 工具函数：为图片题目生成唯一ID
+function generateQuestionId(folderName) {
+  // 使用文件夹名称的哈希值作为ID
+  let hash = 0;
+  for (let i = 0; i < folderName.length; i++) {
+    const char = folderName.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // 转换为32位整数
+  }
+  // 确保ID为正数
+  return Math.abs(hash);
+}
+
+// 处理文件夹的递归函数
+async function handleFolderRecursively(folder, params, selectedMap, imageQuestions, currentPath = '') {
+  const newPath = currentPath ? `${currentPath}/${folder.name}` : folder.name;
+  console.log(`处理文件夹路径: ${newPath}`);
+  
+  try {
+    // 尝试读取文件夹内的图片
+    const imageResponse = await axios.get('http://localhost:3001/images', {
+      params: { folderPath: newPath }
+    });
+    
+    if (imageResponse.data && imageResponse.data.length > 0) {
+      // 这是一个包含图片的文件夹，创建题目对象
+      const questionId = generateQuestionId(folder.name);
+      console.log(`找到包含图片的文件夹: ${newPath}, 图片数量: ${imageResponse.data.length}`);
+      
+      // 从路径解析科目、年级、年份和类型
+      const pathParts = newPath.split('/');
+      // 至少需要5个部分: subject/grade/year/type/folder_name
+      if (pathParts.length >= 5) {
+        const subject = pathParts[0];
+        const grade = pathParts[1];
+        const year = pathParts[2];
+        const type = pathParts[3];
+        
+        imageQuestions.push({
+          id: questionId,
+          type: 'image',
+          subject: subject,
+          grade: grade,
+          year: year,
+          question_type: type,
+          folder_name: folder.name,
+          path: newPath,
+          images: imageResponse.data,
+          is_selected: selectedMap.has(`image-${questionId}`)
+        });
+      } else {
+        // 路径部分不足5个时，尝试从不同的部分提取信息
+        let extractedInfo = {
+          subject: '',
+          grade: '',
+          year: '',
+          type: ''
+        };
+        
+        // 根据路径长度分配信息
+        if (pathParts.length === 1) {
+          extractedInfo.subject = pathParts[0];
+        } else if (pathParts.length === 2) {
+          extractedInfo.subject = pathParts[0];
+          extractedInfo.grade = pathParts[1];
+        } else if (pathParts.length === 3) {
+          extractedInfo.subject = pathParts[0];
+          extractedInfo.grade = pathParts[1];
+          extractedInfo.year = pathParts[2];
+        } else if (pathParts.length === 4) {
+          extractedInfo.subject = pathParts[0];
+          extractedInfo.grade = pathParts[1];
+          extractedInfo.year = pathParts[2];
+          extractedInfo.type = pathParts[3];
+        }
+        
+        // 使用提取的信息或参数中的信息
+        imageQuestions.push({
+          id: questionId,
+          type: 'image',
+          subject: extractedInfo.subject || params.subject || '',
+          grade: extractedInfo.grade || params.grade || '',
+          year: extractedInfo.year || params.year || '',
+          question_type: extractedInfo.type || params.type || '',
+          folder_name: folder.name,
+          path: newPath,
+          images: imageResponse.data,
+          is_selected: selectedMap.has(`image-${questionId}`)
+        });
+      }
+    } else {
+      // 如果当前文件夹没有图片，继续递归查找子文件夹
+      console.log(`${newPath} 不包含图片，尝试查找子文件夹...`);
+      
+      // 构建适合当前层级的新参数
+      const pathParts = newPath.split('/');
+      const newParams = { ...params };
+      
+      // 根据当前路径的层级设置查询参数
+      if (pathParts.length === 1) {
+        // 当前是科目层级
+        newParams.subject = folder.name;
+        delete newParams.grade;
+        delete newParams.year;
+        delete newParams.type;
+      } else if (pathParts.length === 2) {
+        // 当前是年级层级
+        newParams.subject = pathParts[0];
+        newParams.grade = pathParts[1];
+        delete newParams.year;
+        delete newParams.type;
+      } else if (pathParts.length === 3) {
+        // 当前是年份层级
+        newParams.subject = pathParts[0];
+        newParams.grade = pathParts[1];
+        newParams.year = pathParts[2];
+        delete newParams.type;
+      } else if (pathParts.length === 4) {
+        // 当前是类型层级
+        newParams.subject = pathParts[0];
+        newParams.grade = pathParts[1];
+        newParams.year = pathParts[2];
+        newParams.type = pathParts[3];
+      }
+      
+      // console.log(`查询子文件夹，参数:`, newParams);
+      
+      // 获取子文件夹
+      const subFolderResponse = await axios.get('http://localhost:3001/folders', {
+        params: newParams
+      });
+      
+      // 提取文件夹列表，兼容两种响应格式
+      let subFolders = [];
+      if (subFolderResponse.data) {
+        if (Array.isArray(subFolderResponse.data.folders)) {
+          // 格式: { folders: [...] }
+          subFolders = subFolderResponse.data.folders;
+        } else if (Array.isArray(subFolderResponse.data)) {
+          // 格式: [...] 
+          subFolders = subFolderResponse.data;
+        }
+      }
+      
+      console.log(`在路径 ${newPath} 下获取到 ${subFolders.length} 个子文件夹`);
+      
+      // 递归处理每个子文件夹
+      for (const subFolder of subFolders) {
+        await handleFolderRecursively(subFolder, params, selectedMap, imageQuestions, newPath);
+      }
+    }
+  } catch (error) {
+    console.error(`处理路径 ${newPath} 时出错:`, error);
+  }
+}
+
+// 查询题目选中状态
+router.get('/select-status', authenticate, async (req, res) => {
+  const { teacherId } = req.query;
+  
+  if (!teacherId) {
+    return res.status(400).json({ message: '缺少必要参数: teacherId' });
+  }
+  
+  try {
+    console.log(`查询题目选中状态, 教师ID: ${teacherId}`);
+    
+    // 查询老师选中的题目记录
+    const selectedQuestions = await executeWithRetry(async (conn) => {
+      const [rows] = await conn.query(
+        `SELECT question_id, question_type, \`select\` 
+         FROM teachers_selected_questions 
+         WHERE teacher_id = ?`,
+        [teacherId]
+      );
+      return rows;
+    });
+    
+    // 构建结果映射
+    const selectStatusMap = {};
+    selectedQuestions.forEach(q => {
+      const key = `${q.question_type}-${q.question_id}`;
+      selectStatusMap[key] = {
+        question_id: q.question_id,
+        question_type: q.question_type,
+        select: q.select,
+        is_selected: q.select === '1'
+      };
+    });
+    // console.log(`selectStatusMap:`, selectStatusMap)
+    res.json({
+      message: `获取到 ${selectedQuestions.length} 条记录`,
+      count: selectedQuestions.length,
+      statusMap: selectStatusMap
+    });
+    
+  } catch (error) {
+    console.error('查询题目选中状态失败:', error);
+    res.status(500).json({ message: '查询题目选中状态失败', error: error.message });
+  }
+});
+
+module.exports = router; 
+
+

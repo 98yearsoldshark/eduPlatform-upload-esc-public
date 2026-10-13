@@ -1,0 +1,123 @@
+.upload-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.upload-container h2 {
+  text-align: center;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.upload-tabs {
+  display: flex;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #ddd;
+}
+
+.tab-button {
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-size: 16px;
+  color: #666;
+  transition: all 0.3s ease;
+}
+
+.tab-button.active {
+  color: #1a73e8;
+  border-bottom: 2px solid #1a73e8;
+  font-weight: bold;
+}
+
+.upload-container form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.upload-container form > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.upload-container label {
+  margin-bottom: 5px;
+  font-weight: 500;
+  color: #555;
+}
+
+.upload-container select,
+.upload-container input[type="file"],
+.upload-container textarea {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.upload-container textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.latex-textarea {
+  font-family: monospace;
+  min-height: 200px;
+}
+
+.upload-container button[type="submit"] {
+  padding: 10px 20px;
+  background-color: #1a73e8;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  margin-top: 10px;
+  transition: background-color 0.3s ease;
+}
+
+.upload-container button[type="submit"]:hover {
+  background-color: #1557b0;
+}
+
+.answer-section {
+  margin-top: 15px;
+}
+
+.answer-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  margin-top: 5px;
+}
+
+.answer-option {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.custom-answer {
+  margin-top: 10px;
+}
+
+.custom-answer textarea {
+  width: 100%;
+  min-height: 60px;
+}
+
+.latex-upload-section {
+  border: 1px solid #eee;
+  padding: 15px;
+  border-radius: 4px;
+  background-color: #f9f9f9;
+}

@@ -1,0 +1,20 @@
+studentRegister:
+  enabled: true
+  requireEmail: true
+  requirePhone: true
+  allowOpenRegistration: true
+  maxAccountsPerIp: 5
+  registerCooldown: 60
+teacherRegister:
+  enabled: true
+  maxRegisterPerTeacherId: 5
+  requireApproval: false
+  allowSelfRegister: true
+  requireSchool: true
+security:
+  useRecaptcha: false
+  recaptchaKey: ""
+  allowPasswordReset: true
+  minimumPasswordLength: 3
+  restrictedDomains: []
+  restrictedEmails: []

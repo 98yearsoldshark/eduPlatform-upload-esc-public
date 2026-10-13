@@ -1,0 +1,21 @@
+# 默认规则覆盖全部代码；以下仅豁免上游公开的固定常量。
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "上游 Edge 朗读接口公共客户端标识"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^ChatGPT\-Next\-Web/app/utils/ms_edge_tts\.ts$''']
+regexes = ['''^6A5AA1D4EAFF4E9FB37E23D68491D6F4$''']
+
+[[allowlists]]
+description = "上游 Tauri 升级包验签公钥（非私钥）"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^ChatGPT\-Next\-Web/src\-tauri/tauri\.conf\.json$''']
+# Git 历史扫描也会解码 base64，因此同时列出公钥头部的公开编号。
+regexes = [
+  '''^dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERFNDE4MENFM0Y1RTZBOTQKUldTVWFsNC96b0JCM3RqM2NmMnlFTmxIaStRaEJrTHNOU2VqRVlIV1hwVURoWUdVdEc1eDcxVEYK$''',
+  '''^DE4180CE3F5E6A94$''',
+]

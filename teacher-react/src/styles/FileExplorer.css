@@ -1,0 +1,107 @@
+/* FileExplorer 组件样式 */
+
+.file-explorer-container {
+  padding: 20px;
+}
+
+.file-explorer-header {
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.file-explorer-title {
+  margin-bottom: 8px;
+}
+
+.file-explorer-description {
+  margin-bottom: 0;
+}
+
+.file-explorer-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.file-explorer-breadcrumb {
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+}
+
+.back-button {
+  margin-right: 16px;
+}
+
+.file-icon {
+  font-size: 20px;
+}
+
+.folder-icon {
+  color: #1890ff;
+}
+
+.image-icon {
+  color: #13c2c2;
+}
+
+.file-icon {
+  color: #8c8c8c;
+}
+
+.file-preview-content {
+  text-align: center;
+}
+
+.file-preview-image {
+  max-width: 100%;
+}
+
+.text-preview {
+  max-height: 500px;
+  overflow: auto;
+}
+
+.text-preview pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 10px;
+}
+
+.modal-textarea {
+  font-family: monospace;
+}
+
+.upload-icon {
+  margin-bottom: 8px;
+}
+
+.breadcrumb-with-preview {
+  flex: 1;
+}
+
+.action-button-danger {
+  color: #ff4d4f;
+}
+
+.action-button-danger:hover {
+  color: #ff7875;
+}
+
+/* 确认删除对话框样式 */
+.delete-confirm-modal .ant-modal-confirm-body {
+  display: flex;
+  align-items: center;
+}
+
+.delete-confirm-modal .ant-modal-confirm-body .anticon {
+  font-size: 22px;
+  margin-right: 16px;
+  color: #ff4d4f;
+}
+
+.delete-confirm-modal .ant-modal-confirm-title {
+  color: #ff4d4f;
+  font-weight: 500;
+} 

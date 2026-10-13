@@ -1,0 +1,58 @@
+# 公开配置：这里仅保留功能设置，真实凭据使用仓库根目录的 .env。
+# 数据库配置
+databases:
+  # MongoDB配置
+  mongodb:
+    # 是否启用MongoDB
+    enabled: true
+    # MongoDB连接字符串
+    connectionString: "" # 由 MONGODB_URI 环境变量提供
+    # 数据库名称
+    dbName: "student_learning_db"
+    # 数据库选项
+    options:
+      # useNewUrlParser和useUnifiedTopology选项已在MongoDB驱动4.0.0后弃用
+      maxPoolSize: 10
+    # 当MongoDB不可用时是否降级使用MySQL
+    fallbackToMySQL: true
+    # 启动时是否从MySQL同步数据到MongoDB
+    syncFromMySQL: true
+    # 集合名称配置
+    collections:
+      userAnswers: "user_answers"
+      fileMetadata: "file_metadata"
+      statistics: "statistics"
+      posts: "posts"
+      comments: "comments"
+  
+  # MySQL配置
+  mysql:
+    # 是否启用MySQL
+    enabled: true
+    # 数据库连接信息
+    host: "127.0.0.1" # 运行时由 MYSQL_HOST 提供
+    port: 3306
+    user: "root"
+    password: "" # 由 MYSQL_PASSWORD 环境变量提供
+    database: "cxsjdb"
+    # 连接池配置
+    waitForConnections: true
+    connectionLimit: 10
+    queueLimit: 0 
+
+# 应用功能配置
+features:
+  # 用户答题记录功能配置
+  userAnswers:
+    # 首选数据库，可选值: "mongodb"或"mysql"
+    # 注意: 如果首选数据库被禁用，系统会尝试使用另一个已启用的数据库
+    preferredDatabase: "mongodb"
+    # 数据同步模式，可选值: "mysql_to_mongodb", "mongodb_to_mysql", "none"
+    # mysql_to_mongodb: 启动时从MySQL同步数据到MongoDB
+    # mongodb_to_mysql: 启动时从MongoDB同步数据到MySQL
+    # none: 不进行数据同步
+    syncMode: "none"
+    # 数据双写设置（当两个数据库都启用时）
+    # 如果为true，用户提交答题记录时将同时写入两个数据库
+    # 如果为false，只写入首选数据库
+    dualWrite: true 

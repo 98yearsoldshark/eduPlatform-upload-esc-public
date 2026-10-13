@@ -1,0 +1,66 @@
+.latex-browser-container {
+  padding: 16px;
+}
+
+.latex-browser-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.latex-browser-filters {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: #f9f9f9;
+  border-radius: 4px;
+}
+
+.latex-preview {
+  padding: 10px;
+}
+
+.latex-info {
+  margin-bottom: 20px;
+  padding: 15px;
+  background: #f9f9f9;
+  border-radius: 4px;
+}
+
+.latex-note {
+  padding: 10px;
+  background: #fffbe6;
+  border-left: 4px solid #faad14;
+  border-radius: 0 4px 4px 0;
+  margin-top: 8px;
+}
+
+.latex-content {
+  margin-top: 16px;
+}
+
+.latex-code-display {
+  padding: 10px;
+  background: #f5f5f5;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-family: monospace;
+  overflow-x: auto;
+  margin: 10px 0 20px 0;
+  white-space: pre-wrap;
+}
+
+.latex-render {
+  padding: 15px;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  margin: 10px 0;
+  min-height: 100px;
+}
+
+.latex-preview-edit {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px dashed #d9d9d9;
+} 

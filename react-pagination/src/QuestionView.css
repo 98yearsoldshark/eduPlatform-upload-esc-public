@@ -1,0 +1,277 @@
+.question-view-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+  margin-top: 60px; /* 防止导航栏遮挡 */
+}
+
+.back-button {
+  margin-bottom: 20px;
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+}
+
+.loading-text {
+  margin-top: 16px;
+  color: #1677ff;
+  font-size: 16px;
+}
+
+/* 题目信息卡片 */
+.question-info-card {
+  margin-bottom: 16px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.question-path-info {
+  margin-bottom: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.images-container {
+  margin-top: 16px;
+}
+
+.main-image {
+  width: 100%;
+  max-height: 400px;
+  object-fit: contain;
+  margin-bottom: 16px;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background-color: #fafafa;
+}
+
+.sub-image {
+  width: 100%;
+  height: 150px;
+  object-fit: contain;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+}
+
+.latex-container {
+  margin-top: 16px;
+  padding: 16px;
+  background-color: #fafafa;
+  border-radius: 8px;
+}
+
+.latex-content {
+  font-size: 16px;
+  line-height: 1.6;
+  padding: 16px;
+  overflow-x: auto;
+}
+
+/* 答题卡片 */
+.answer-card {
+  margin-bottom: 16px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.answer-options {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.custom-answer-input {
+  width: 200px;
+  margin-top: 8px;
+}
+
+.submit-button {
+  margin-left: 16px;
+}
+
+.answer-result {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.answer-result.correct {
+  background-color: #f6ffed;
+  border: 1px solid #b7eb8f;
+}
+
+.answer-result.incorrect {
+  background-color: #fff2f0;
+  border: 1px solid #ffccc7;
+}
+
+.correct-answer {
+  display: flex;
+  align-items: center;
+  color: #52c41a;
+}
+
+.incorrect-answer {
+  display: flex;
+  align-items: center;
+  color: #f5222d;
+}
+
+.icon {
+  font-size: 18px;
+  margin-right: 8px;
+}
+
+.rating-container {
+  margin-top: 16px;
+}
+
+.rating-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.rate-stars {
+  font-size: 24px;
+}
+
+/* 相关帖子卡片 */
+.related-posts-card {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.related-post-item {
+  padding: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.related-post-item:last-child {
+  border-bottom: none;
+}
+
+.related-post-item h4 {
+  margin-bottom: 8px;
+}
+
+.related-post-item a {
+  color: #1677ff;
+  text-decoration: none;
+}
+
+.related-post-item a:hover {
+  text-decoration: underline;
+}
+
+.post-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+/* 历史记录卡片 */
+.history-card {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  height: 100%;
+}
+
+.history-list {
+  margin-top: 16px;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.history-item {
+  margin-bottom: 16px;
+}
+
+.history-attempt {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.history-answer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.history-answer.correct {
+  background-color: #f6ffed;
+}
+
+.history-answer.incorrect {
+  background-color: #fff2f0;
+}
+
+.history-icon {
+  font-size: 16px;
+}
+
+.history-icon.correct {
+  color: #52c41a;
+}
+
+.history-icon.incorrect {
+  color: #f5222d;
+}
+
+.history-time {
+  font-size: 12px;
+  color: #8c8c8c;
+  text-align: right;
+}
+
+.no-history {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .question-view-container {
+    padding: 10px;
+  }
+  
+  .answer-options {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .submit-button {
+    margin-left: 0;
+    margin-top: 16px;
+    width: 100%;
+  }
+  
+  .post-meta {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 576px) {
+  .question-path-info {
+    flex-direction: column;
+  }
+} 

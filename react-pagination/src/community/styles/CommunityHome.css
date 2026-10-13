@@ -1,0 +1,253 @@
+/* 社区主页样式 */
+.community-home {
+  margin-top: 8%;
+  display: flex;
+  min-height: calc(100vh - 60px);
+  background-color: #f5f5f5;
+}
+
+/* 侧边栏样式 */
+.community-sidebar {
+  width: 250px;
+  background-color: #fff;
+  border-right: 1px solid #e0e0e0;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sidebar-section {
+  margin-bottom: 20px;
+}
+
+.sidebar-section h3 {
+  font-size: 16px;
+  margin-bottom: 10px;
+  color: #333;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 8px;
+}
+
+.create-post-btn {
+  width: 100%;
+  padding: 12px;
+  background-color: #1890ff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.create-post-btn:hover {
+  background-color: #40a9ff;
+}
+
+.future-features {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.future-feature-btn {
+  padding: 8px;
+  background-color: #f0f0f0;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.future-feature-btn:hover {
+  background-color: #e6f7ff;
+  border-color: #91d5ff;
+}
+
+/* 主内容区样式 */
+.community-main {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.community-header {
+  margin-bottom: 20px;
+}
+
+.user-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  background-color: #fff;
+  padding: 10px 15px;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.apple-coins {
+  display: flex;
+  gap: 15px;
+}
+
+.apple-coins span {
+  display: flex;
+  align-items: center;
+  color: #666;
+}
+
+.notifications {
+  position: relative;
+  cursor: pointer;
+  padding: 5px 10px;
+  border-radius: 4px;
+  transition: background-color 0.3s;
+}
+
+.notifications:hover {
+  background-color: #f0f0f0;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background-color: #ff4d4f;
+  color: white;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 12px;
+}
+
+.category-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+  overflow-x: auto;
+  padding-bottom: 5px;
+}
+
+.category-tabs button {
+  padding: 8px 15px;
+  background-color: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.3s;
+}
+
+.category-tabs button.active {
+  background-color: #1890ff;
+  color: white;
+  border-color: #1890ff;
+}
+
+.category-tabs button:hover:not(.active) {
+  color: #1890ff;
+  border-color: #1890ff;
+}
+
+.sort-options {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.sort-options button {
+  padding: 6px 12px;
+  background-color: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.sort-options button.active {
+  background-color: #1890ff;
+  color: white;
+  border-color: #1890ff;
+}
+
+.sort-options button:hover:not(.active) {
+  color: #1890ff;
+  border-color: #1890ff;
+}
+
+.posts-container {
+  background-color: #fff;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  min-height: 400px;
+}
+
+.loading, .error, .empty-posts {
+  padding: 40px;
+  text-align: center;
+  color: #666;
+}
+
+.error {
+  color: #ff4d4f;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 20px;
+  gap: 15px;
+}
+
+.pagination button {
+  padding: 8px 15px;
+  background-color: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.pagination button:hover:not(:disabled) {
+  color: #1890ff;
+  border-color: #1890ff;
+}
+
+.pagination button:disabled {
+  color: #d9d9d9;
+  cursor: not-allowed;
+}
+
+.pagination span {
+  color: #666;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .community-home {
+    flex-direction: column;
+  }
+  
+  .community-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  
+  .category-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  
+  .user-info {
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+  }
+}

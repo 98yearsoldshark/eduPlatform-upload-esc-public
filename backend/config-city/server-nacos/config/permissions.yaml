@@ -1,0 +1,51 @@
+roles:
+  teacher:
+    canAssignAssistant: true
+    canViewAllStudents: true
+    maxClassCount: 10
+    canDeleteStudentWorks: true
+    canModifyQuestions: true
+  assistant:
+    canManageClass: true
+    canGradeAssignments: true
+    canPublishNotifications: false
+    canViewStudentDetails: true
+    canModerateCommunity: false
+  admin:
+    canAssignTeacher: true
+    canAssignAdmin: false
+    canAccessSystemConfig: false
+    canViewAllUserData: true
+    canManageAnnouncements: true
+policies:
+  enableIpWhitelist: false
+  adminIpWhitelist:
+    - 127.0.0.1
+    - "::1"
+  maxLoginAttempts: 5
+  accountLockTime: 30
+  passwordExpiryDays: 90
+  passwordPolicy:
+    minLength: 8
+    requireUppercase: true
+    requireLowercase: true
+    requireNumbers: true
+    requireSpecialChars: true
+  sessionTimeout: 120
+  allowMultipleDevices: false
+  logSensitiveOperations: true
+community:
+  enabled: true
+  postModeration:
+    enabled: true
+    exemptRoles:
+      - admin
+      - teacher
+  commentControl:
+    allowAnonymous: false
+    enableWordFilter: true
+    maxLength: 500
+  userControl:
+    requireInvitationCode: false
+    allowUsernameChange: true
+    usernameChangeCooldown: 30

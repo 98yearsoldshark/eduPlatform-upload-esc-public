@@ -1,0 +1,183 @@
+/* AI对话框样式 */
+
+/* 通用样式 */
+.ai-dialog {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background-color: #fff;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.2s ease;
+  will-change: transform, left, top, width, height;
+  transform: translateZ(0); /* 硬件加速 */
+}
+
+.ai-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background-color: #f3f3f3;
+  border-bottom: 1px solid #e0e0e0;
+  cursor: move;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  will-change: transform;
+}
+
+.ai-dialog-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.ai-dialog-action-button {
+  background: none;
+  border: none;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0;
+  color: #555;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  position: relative;
+  z-index: 2;
+}
+
+.ai-dialog-action-button:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: #000;
+}
+
+.ai-dialog-action-button:active {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+/* 模式切换按钮样式 */
+.ai-dialog-action-button.mode-button {
+  background-color: rgba(0, 120, 212, 0.1);
+  color: #0078d4;
+  border: 1px solid rgba(0, 120, 212, 0.3);
+}
+
+.ai-dialog-action-button.mode-button:hover {
+  background-color: rgba(0, 120, 212, 0.2);
+  color: #0078d4;
+  border: 1px solid rgba(0, 120, 212, 0.5);
+}
+
+.ai-dialog-action-button.mode-button:active {
+  background-color: rgba(0, 120, 212, 0.3);
+}
+
+.ai-dialog-content {
+  flex: 1;
+  border: none;
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+}
+
+/* 嵌入式模式 - 可拖拽窗口 */
+.ai-dialog-embedded {
+  position: fixed;
+  z-index: 1000;
+  resize: both;
+  min-width: 300px;
+  min-height: 400px;
+  transform: translate3d(0, 0, 0); /* 硬件加速 */
+  backface-visibility: hidden; /* 防止闪烁 */
+  -webkit-backface-visibility: hidden;
+  will-change: transform;
+}
+
+/* 助手式模式 - 侧边栏 */
+.ai-dialog-assistant {
+  position: fixed;
+  right: 0;
+  top: 70px;
+  bottom: 0;
+  width: 350px;
+  z-index: 900;
+  border-radius: 8px 0 0 0;
+  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.1);
+}
+
+/* 正常式模式 - 全屏 */
+.ai-dialog-normal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1100;
+  border-radius: 0;
+}
+
+/* 调整大小的句柄 */
+.ai-dialog-resize-handle {
+  position: absolute;
+  background-color: transparent;
+  z-index: 10;
+}
+
+.ai-dialog-resize-handle-right {
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 10px;
+  height: 80px;
+  cursor: ew-resize;
+}
+
+.ai-dialog-resize-handle-bottom {
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 10px;
+  width: 80px;
+  cursor: ns-resize;
+}
+
+.ai-dialog-resize-handle-corner {
+  right: 0;
+  bottom: 0;
+  width: 20px;
+  height: 20px;
+  cursor: nwse-resize;
+}
+
+/* 悬浮按钮 - 最小化后显示 */
+.ai-dialog-floating-button {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: 50px;
+  height: 50px;
+  background-color: #1677ff;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  font-weight: bold;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  will-change: transform;
+}
+
+.ai-dialog-floating-button:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+.ai-dialog-floating-button:active {
+  transform: scale(0.98);
+} 
